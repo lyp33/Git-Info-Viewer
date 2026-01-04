@@ -6,11 +6,13 @@ import javax.swing.table.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.MouseEvent;
 import java.awt.geom.*;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.*;
+import java.util.EventObject;
 
 /**
  * 右侧信息显示面板
@@ -69,7 +71,15 @@ public class InfoPanel extends JPanel {
 
         @Override
         public boolean isCellEditable(int row, int column) {
-            return column == 0 || column == 3 || column == 7;  // Select, Branch, Action列可编辑
+            if (column == 0) { // Select列
+                // 只有Git仓库行的checkbox才可编辑
+                if (row >= 0 && row < getRowCount()) {
+                    String type = (String) getValueAt(row, 2); // Type列是第2列
+                    return "[Git Repo]".equals(type);
+                }
+                return false;
+            }
+            return column == 3 || column == 7;  // Branch, Action列可编辑
         }
     }
 
@@ -694,17 +704,22 @@ public class InfoPanel extends JPanel {
             tablePanel.add(tableScroll, BorderLayout.CENTER);
             mainPanel.add(tablePanel);
 
-            // 添加批量Switch面板
-            JPanel batchSwitchPanel = createBatchSwitchPanel();
-            mainPanel.add(batchSwitchPanel);
+            // 检查是否有Git仓库
+            boolean hasGitRepos = hasGitRepositories();
             
-            // 添加Message查询面板
-            JPanel messageSearchPanel = createMessageSearchPanel();
-            mainPanel.add(messageSearchPanel);
+            if (hasGitRepos) {
+                // 添加批量Switch面板
+                JPanel batchSwitchPanel = createBatchSwitchPanel();
+                mainPanel.add(batchSwitchPanel);
+                
+                // 添加Message查询面板
+                JPanel messageSearchPanel = createMessageSearchPanel();
+                mainPanel.add(messageSearchPanel);
 
-            // 添加Batch Cherry-Pick面板
-            JPanel batchCherryPickPanel = createBatchCherryPickPanel();
-            mainPanel.add(batchCherryPickPanel);
+                // 添加Batch Cherry-Pick面板
+                JPanel batchCherryPickPanel = createBatchCherryPickPanel();
+                mainPanel.add(batchCherryPickPanel);
+            }
 
             // 添加鼠标监听器，监听双击事件
             gitReposTable.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -754,6 +769,24 @@ public class InfoPanel extends JPanel {
         };
 
         worker.execute();
+    }
+
+    /**
+     * 检查当前表格中是否有Git仓库
+     */
+    private boolean hasGitRepositories() {
+        if (gitReposTable == null || gitReposTable.getModel() == null) {
+            return false;
+        }
+        
+        DefaultTableModel model = (DefaultTableModel) gitReposTable.getModel();
+        for (int i = 0; i < model.getRowCount(); i++) {
+            String type = (String) model.getValueAt(i, 2); // Type列是第2列
+            if ("[Git Repo]".equals(type)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private class BranchCellRenderer extends JComboBox<String> implements TableCellRenderer {
@@ -980,6 +1013,7 @@ public class InfoPanel extends JPanel {
             
             if (isGitRepo) {
                 setVisible(true);
+                setEnabled(true);
                 boolean checked = value != null && (Boolean) value;
                 setSelected(checked);
                 setBackground(row % 2 == 0 ? EVEN_ROW_COLOR : ODD_ROW_COLOR);
@@ -989,9 +1023,14 @@ public class InfoPanel extends JPanel {
                 setSelectedIcon(createCheckIcon(checked));
                 setText("");
             } else {
-                // 非Git仓库不显示checkbox
+                // 非Git仓库不显示checkbox，完全禁用
                 setVisible(false);
+                setEnabled(false);
+                setSelected(false);
                 setBackground(row % 2 == 0 ? EVEN_ROW_COLOR : ODD_ROW_COLOR);
+                setIcon(null);
+                setSelectedIcon(null);
+                setText("");
             }
             
             return this;
@@ -1062,6 +1101,21 @@ public class InfoPanel extends JPanel {
             });
         }
         
+        @Override
+        public boolean isCellEditable(EventObject e) {
+            // 额外的检查：确保只有Git仓库行可以编辑
+            if (e instanceof MouseEvent) {
+                MouseEvent me = (MouseEvent) e;
+                JTable table = (JTable) me.getSource();
+                int row = table.rowAtPoint(me.getPoint());
+                if (row >= 0 && row < table.getRowCount()) {
+                    String type = (String) table.getValueAt(row, 2);
+                    return "[Git Repo]".equals(type);
+                }
+            }
+            return super.isCellEditable(e);
+        }
+        
         /**
          * 更新checkbox的图标
          */
@@ -1085,6 +1139,7 @@ public class InfoPanel extends JPanel {
             
             if (isGitRepo) {
                 checkBox.setVisible(true);
+                checkBox.setEnabled(true);
                 checkBox.setSelected(value != null && (Boolean) value);
                 checkBox.setBackground(row % 2 == 0 ? EVEN_ROW_COLOR : ODD_ROW_COLOR);
                 
@@ -1092,7 +1147,10 @@ public class InfoPanel extends JPanel {
                 updateCheckBoxIcon();
                 checkBox.setText("");
             } else {
+                // 非Git仓库，返回一个不可编辑的组件
                 checkBox.setVisible(false);
+                checkBox.setEnabled(false);
+                checkBox.setSelected(false);
             }
             
             return checkBox;

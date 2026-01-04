@@ -139,6 +139,17 @@ public class BatchCherryPickDialog extends JDialog {
     private JPanel createActionButtonPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
 
+        JButton sortByTimeButton = new JButton("Sort by Time");
+        sortByTimeButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        sortByTimeButton.setBackground(new Color(255, 152, 0)); // Orange color
+        sortByTimeButton.setForeground(Color.WHITE);
+        sortByTimeButton.setFocusPainted(false);
+        sortByTimeButton.setBorderPainted(false);
+        sortByTimeButton.setOpaque(true);
+        sortByTimeButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        sortByTimeButton.addActionListener(e -> sortCommitUrlsByTime());
+        panel.add(sortByTimeButton);
+
         JButton cherryPickButton = new JButton("Cherry Pick All");
         cherryPickButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
         cherryPickButton.setBackground(PRIMARY_COLOR);
@@ -414,11 +425,20 @@ public class BatchCherryPickDialog extends JDialog {
                             }
 
                             if (cpResult.success) {
-                                publish("\n  [SUCCESS] Cherry-pick completed successfully");
-                                logBuilder.append("\n  [SUCCESS] Cherry-pick completed successfully\n");
-                                resultItem.logs.add("  [SUCCESS] Cherry-pick completed successfully");
+                                if (cpResult.hasConflicts) {
+                                    publish("\n  [SUCCESS] Cherry-pick completed with conflicts");
+                                    logBuilder.append("\n  [SUCCESS] Cherry-pick completed with conflicts\n");
+                                    resultItem.logs.add("  [SUCCESS] Cherry-pick completed with conflicts");
 
-                                resultItem.status = CherryPickStatus.SUCCESS;
+                                    resultItem.status = CherryPickStatus.SUCCESS;
+                                    resultItem.errorMessage = "Warning: conflicted files exist";
+                                } else {
+                                    publish("\n  [SUCCESS] Cherry-pick completed successfully");
+                                    logBuilder.append("\n  [SUCCESS] Cherry-pick completed successfully\n");
+                                    resultItem.logs.add("  [SUCCESS] Cherry-pick completed successfully");
+
+                                    resultItem.status = CherryPickStatus.SUCCESS;
+                                }
                             } else {
                                 publish("\n  [FAILED] Cherry-pick execution failed");
                                 logBuilder.append("\n  [FAILED] Cherry-pick execution failed\n");
@@ -581,6 +601,172 @@ public class BatchCherryPickDialog extends JDialog {
     }
 
     /**
+     * 按时间排序 commit URLs
+     */
+    private void sortCommitUrlsByTime() {
+        String urlsText = commitUrlsTextArea.getText().trim();
+        
+        if (urlsText.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "Please enter commit URLs first.",
+                    "No URLs to Sort",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        outputTextArea.setText("");
+        appendLog("=== Sorting Commit URLs by Time ===\n");
+        appendLog("Processing URLs and extracting commit information...\n\n");
+
+        SwingWorker<Void, String> worker = new SwingWorker<Void, String>() {
+            private List<CommitTimeInfo> commitTimeInfos = new ArrayList<>();
+
+            @Override
+            protected Void doInBackground() throws Exception {
+                String[] urls = urlsText.split("\n");
+                
+                publish("Found " + urls.length + " URLs to process");
+                publish("=".repeat(50));
+
+                for (int i = 0; i < urls.length; i++) {
+                    String url = urls[i].trim();
+                    if (url.isEmpty()) {
+                        publish("Skipping empty line " + (i + 1));
+                        continue;
+                    }
+
+                    publish("\nProcessing URL " + (i + 1) + ": " + url);
+
+                    try {
+                        // 解析 commit URL
+                        CommitInfo commitInfo = parseCommitUrl(url);
+                        if (commitInfo == null) {
+                            publish("  ✗ Invalid URL format, skipping");
+                            continue;
+                        }
+
+                        publish("  ✓ Parsed - Project: " + commitInfo.projectCode + ", Commit: " + commitInfo.commitId);
+
+                        // 查找项目目录
+                        File projectDir = findProjectDirectory(commitInfo.projectCode);
+                        if (projectDir == null) {
+                            publish("  ✗ Project directory not found, skipping");
+                            continue;
+                        }
+
+                        publish("  ✓ Found project directory: " + projectDir.getName());
+
+                        // 获取 commit 信息
+                        CommitTimeInfo timeInfo = getCommitTimeInfo(projectDir, commitInfo.commitId, url);
+                        if (timeInfo != null) {
+                            commitTimeInfos.add(timeInfo);
+                            publish("  ✓ Commit time: " + timeInfo.timeString + ", Author: " + timeInfo.author);
+                        } else {
+                            publish("  ✗ Failed to get commit information");
+                        }
+
+                    } catch (Exception e) {
+                        publish("  ✗ Error processing URL: " + e.getMessage());
+                    }
+                }
+
+                // 按时间排序 (正序 - 从早到晚)
+                commitTimeInfos.sort(Comparator.comparing(info -> info.timestamp));
+
+                publish("\n" + "=".repeat(50));
+                publish("SORTING RESULTS");
+                publish("=".repeat(50));
+                publish("Successfully processed " + commitTimeInfos.size() + " commits");
+                publish("Sorted by commit time (ascending order):");
+                publish("");
+
+                StringBuilder sortedUrls = new StringBuilder();
+                for (int i = 0; i < commitTimeInfos.size(); i++) {
+                    CommitTimeInfo info = commitTimeInfos.get(i);
+                    publish((i + 1) + ". " + info.timeString + " | " + info.author + " | " + info.commitId.substring(0, 8));
+                    publish("   " + info.url);
+                    
+                    sortedUrls.append(info.url);
+                    if (i < commitTimeInfos.size() - 1) {
+                        sortedUrls.append("\n");
+                    }
+                }
+
+                // 更新文本区域中的 URLs
+                SwingUtilities.invokeLater(() -> {
+                    commitUrlsTextArea.setText(sortedUrls.toString());
+                });
+
+                publish("\n" + "=".repeat(50));
+                publish("URLs have been reordered in the input area above");
+                publish("Sort completed at: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()));
+
+                return null;
+            }
+
+            @Override
+            protected void process(List<String> chunks) {
+                for (String message : chunks) {
+                    appendLog(message + "\n");
+                }
+            }
+
+            @Override
+            protected void done() {
+                appendLog("\n=== Sort by Time Completed ===\n");
+            }
+        };
+
+        worker.execute();
+    }
+
+    /**
+     * 获取 commit 的时间信息
+     */
+    private CommitTimeInfo getCommitTimeInfo(File projectDir, String commitId, String url) {
+        try {
+            if (!GitInfoExtractor.isGitRepository(projectDir)) {
+                return null;
+            }
+
+            org.eclipse.jgit.storage.file.FileRepositoryBuilder builder =
+                new org.eclipse.jgit.storage.file.FileRepositoryBuilder();
+            org.eclipse.jgit.lib.Repository repository = builder
+                    .setGitDir(new java.io.File(projectDir, ".git"))
+                    .readEnvironment()
+                    .findGitDir()
+                    .build();
+
+            try (org.eclipse.jgit.revwalk.RevWalk revWalk = new org.eclipse.jgit.revwalk.RevWalk(repository)) {
+                org.eclipse.jgit.lib.ObjectId objectId = repository.resolve(commitId);
+                if (objectId == null) {
+                    repository.close();
+                    return null;
+                }
+
+                org.eclipse.jgit.revwalk.RevCommit commit = revWalk.parseCommit(objectId);
+                
+                CommitTimeInfo timeInfo = new CommitTimeInfo();
+                timeInfo.url = url;
+                timeInfo.commitId = commitId;
+                timeInfo.timestamp = commit.getCommitTime() * 1000L; // Convert to milliseconds
+                timeInfo.timeString = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(timeInfo.timestamp));
+                timeInfo.author = commit.getAuthorIdent().getName();
+                
+                repository.close();
+                return timeInfo;
+                
+            } catch (Exception e) {
+                repository.close();
+                return null;
+            }
+
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
      * 解析 commit URL
      * 支持两种格式：
      * 1. GitLab格式: https://gitlab.insuremo.com/project/path/-/commit/abc123
@@ -736,6 +922,8 @@ public class BatchCherryPickDialog extends JDialog {
     private CherryPickResult executeSameProjectCherryPick(File projectDir, String commitId, String targetBranch) {
         CherryPickResult result = new CherryPickResult();
         result.logs = new ArrayList<>();
+        result.hasConflicts = false;
+        result.conflictedFiles = new ArrayList<>();
 
         try {
             result.logs.add("[Branch Check] Checking current branch...");
@@ -779,6 +967,8 @@ public class BatchCherryPickDialog extends JDialog {
                     // 获取冲突文件列表
                     List<String> conflictedFiles = GitOperations.getConflictedFiles(projectDir);
                     if (!conflictedFiles.isEmpty()) {
+                        result.hasConflicts = true;
+                        result.conflictedFiles = conflictedFiles;
                         result.logs.add("  [CONFLICT] Conflicted files:");
                         for (String file : conflictedFiles) {
                             result.logs.add("    - " + file);
@@ -968,6 +1158,8 @@ public class BatchCherryPickDialog extends JDialog {
     private static class CherryPickResult {
         boolean success;
         List<String> logs;
+        boolean hasConflicts; // 新增：是否有冲突
+        List<String> conflictedFiles; // 新增：冲突文件列表
     }
 
     /**
@@ -978,5 +1170,16 @@ public class BatchCherryPickDialog extends JDialog {
         String commitId;
         String baseUrl;
         String fullUrl;
+    }
+
+    /**
+     * Commit 时间信息封装类
+     */
+    private static class CommitTimeInfo {
+        String url;
+        String commitId;
+        long timestamp;
+        String timeString;
+        String author;
     }
 }

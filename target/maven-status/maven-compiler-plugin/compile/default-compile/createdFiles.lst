@@ -2,6 +2,7 @@ com\gitviewer\SettingsDialog.class
 com\gitviewer\InfoPanel$CommitSearchResultDialog$ChangedFilesRenderer.class
 com\gitviewer\InfoPanel$CheckBoxCellRenderer$1.class
 com\gitviewer\BatchCherryPickResultDialog$2.class
+com\gitviewer\BatchCherryPickDialog$2.class
 com\gitviewer\BatchCherryPickDialog$CherryPickStatus.class
 com\gitviewer\RepoDetailsDialog$1.class
 com\gitviewer\InfoPanel$2.class
@@ -26,6 +27,7 @@ com\gitviewer\BatchCherryPickResultDialog$1.class
 com\gitviewer\GitInfoExtractor$GitRepositoryInfo.class
 com\gitviewer\InfoPanel$BranchCellEditor$1.class
 com\gitviewer\InfoPanel$6.class
+com\gitviewer\BatchCherryPickDialog$CommitTimeInfo.class
 com\gitviewer\RepoDetailsDialog$6.class
 com\gitviewer\RepoDetailsDialog$3.class
 com\gitviewer\InfoPanel$CommitSearchResultDialog$3.class
