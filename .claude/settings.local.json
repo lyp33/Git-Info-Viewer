@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn clean compile:*)",
+      "Bash(where mvn:*)",
+      "Bash(java:*)",
+      "Bash(mvn clean package:*)",
+      "Bash(ls:*)",
+      "Bash(timeout:*)",
+      "Bash(start-git-viewer:*)",
+      "Bash(cmd.exe:*)",
+      "Bash(ping:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(mvn package:*)",
+      "Bash(powershell:*)"
+    ]
+  }
+}
