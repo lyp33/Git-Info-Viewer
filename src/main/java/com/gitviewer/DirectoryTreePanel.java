@@ -3,8 +3,9 @@ package com.gitviewer;
 import javax.swing.*;
 import javax.swing.tree.*;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.File;
-import java.util.Arrays;
 
 /**
  * 左侧目录树面板
@@ -16,6 +17,7 @@ public class DirectoryTreePanel extends JPanel {
     private DefaultTreeModel treeModel;
     private File rootDirectory;
     private DirectorySelectionListener selectionListener;
+    private TreeRefreshListener refreshListener;
     JTextField pathTextField;
 
     public DirectoryTreePanel() {
@@ -76,6 +78,23 @@ public class DirectoryTreePanel extends JPanel {
                 File selectedFile = (File) userObject;
                 if (selectionListener != null) {
                     selectionListener.onDirectorySelected(selectedFile);
+                }
+            }
+        });
+
+        // 添加右键菜单
+        tree.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    showPopupMenu(e);
+                }
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    showPopupMenu(e);
                 }
             }
         });
@@ -212,10 +231,232 @@ public class DirectoryTreePanel extends JPanel {
     }
 
     /**
+     * 设置树刷新监听器
+     */
+    public void addTreeRefreshListener(TreeRefreshListener listener) {
+        this.refreshListener = listener;
+    }
+
+    /**
+     * 显示右键菜单
+     */
+    private void showPopupMenu(MouseEvent e) {
+        int row = tree.getRowForLocation(e.getX(), e.getY());
+        if (row < 0) return;
+
+        // 选中右键点击的节点
+        tree.setSelectionRow(row);
+
+        TreePath path = tree.getPathForRow(row);
+        if (path == null) return;
+
+        DefaultMutableTreeNode node = (DefaultMutableTreeNode) path.getLastPathComponent();
+        Object userObject = node.getUserObject();
+
+        if (!(userObject instanceof File)) return;
+
+        File selectedDir = (File) userObject;
+        if (!selectedDir.isDirectory()) return;
+
+        // 创建右键菜单
+        JPopupMenu popupMenu = new JPopupMenu();
+
+        // New Folder 菜单项
+        JMenuItem newFolderItem = new JMenuItem("New Folder");
+        newFolderItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        newFolderItem.addActionListener(event -> {
+            showNewFolderDialog(node, selectedDir);
+        });
+        popupMenu.add(newFolderItem);
+
+        // Checkout New Git Project 菜单项
+        JMenuItem checkoutItem = new JMenuItem("Checkout New Git Project");
+        checkoutItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        checkoutItem.addActionListener(event -> {
+            showCheckoutDialog(selectedDir);
+        });
+        popupMenu.add(checkoutItem);
+
+        popupMenu.addSeparator();
+
+        // 刷新菜单项
+        JMenuItem refreshItem = new JMenuItem("Refresh");
+        refreshItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        refreshItem.addActionListener(event -> {
+            refreshNode(node, selectedDir);
+        });
+        popupMenu.add(refreshItem);
+
+        popupMenu.show(tree, e.getX(), e.getY());
+    }
+
+    /**
+     * 显示新建文件夹对话框
+     */
+    private void showNewFolderDialog(DefaultMutableTreeNode node, File parentDirectory) {
+        // 创建自定义对话框
+        JDialog dialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), "New Folder", true);
+        dialog.setSize(400, 150);
+        dialog.setLocationRelativeTo(SwingUtilities.getWindowAncestor(this));
+        dialog.setLayout(new BorderLayout(10, 10));
+
+        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 10, 15));
+
+        JLabel label = new JLabel("Enter folder name:");
+        label.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        mainPanel.add(label, BorderLayout.NORTH);
+
+        JTextField folderNameField = new JTextField();
+        folderNameField.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        folderNameField.setPreferredSize(new Dimension(350, 30));
+        mainPanel.add(folderNameField, BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton cancelBtn = new JButton("Cancel");
+        cancelBtn.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        cancelBtn.addActionListener(e -> dialog.dispose());
+
+        JButton submitBtn = new JButton("Submit");
+        submitBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        submitBtn.setBackground(new Color(25, 84, 166));
+        submitBtn.setForeground(Color.WHITE);
+        submitBtn.setFocusPainted(false);
+        submitBtn.setBorderPainted(false);
+        submitBtn.setOpaque(true);
+        submitBtn.addActionListener(e -> {
+            String folderName = folderNameField.getText().trim();
+            if (createNewFolder(node, parentDirectory, folderName)) {
+                dialog.dispose();
+            }
+        });
+
+        // 回车键提交
+        folderNameField.addActionListener(e -> submitBtn.doClick());
+
+        buttonPanel.add(cancelBtn);
+        buttonPanel.add(submitBtn);
+        mainPanel.add(buttonPanel, BorderLayout.SOUTH);
+
+        dialog.add(mainPanel);
+        dialog.setVisible(true);
+    }
+
+    /**
+     * 创建新文件夹
+     */
+    private boolean createNewFolder(DefaultMutableTreeNode node, File parentDirectory, String folderName) {
+        if (folderName == null || folderName.isEmpty()) {
+            JOptionPane.showMessageDialog(
+                SwingUtilities.getWindowAncestor(this),
+                "Please enter a folder name.",
+                "Error",
+                JOptionPane.ERROR_MESSAGE
+            );
+            return false;
+        }
+
+        // 检查文件名是否合法
+        if (folderName.contains("/") || folderName.contains("\\") || 
+            folderName.contains(":") || folderName.contains("*") ||
+            folderName.contains("?") || folderName.contains("\"") ||
+            folderName.contains("<") || folderName.contains(">") ||
+            folderName.contains("|")) {
+            JOptionPane.showMessageDialog(
+                SwingUtilities.getWindowAncestor(this),
+                "Invalid folder name. Cannot contain: / \\ : * ? \" < > |",
+                "Error",
+                JOptionPane.ERROR_MESSAGE
+            );
+            return false;
+        }
+
+        File newFolder = new File(parentDirectory, folderName);
+        
+        if (newFolder.exists()) {
+            JOptionPane.showMessageDialog(
+                SwingUtilities.getWindowAncestor(this),
+                "Folder '" + folderName + "' already exists.",
+                "Error",
+                JOptionPane.ERROR_MESSAGE
+            );
+            return false;
+        }
+
+        if (newFolder.mkdir()) {
+            // 刷新节点
+            refreshNode(node, parentDirectory);
+            JOptionPane.showMessageDialog(
+                SwingUtilities.getWindowAncestor(this),
+                "Folder '" + folderName + "' created successfully.",
+                "Success",
+                JOptionPane.INFORMATION_MESSAGE
+            );
+            return true;
+        } else {
+            JOptionPane.showMessageDialog(
+                SwingUtilities.getWindowAncestor(this),
+                "Failed to create folder.",
+                "Error",
+                JOptionPane.ERROR_MESSAGE
+            );
+            return false;
+        }
+    }
+
+    /**
+     * 显示 Checkout Git 项目对话框
+     */
+    private void showCheckoutDialog(File targetDirectory) {
+        Frame parentFrame = (Frame) SwingUtilities.getWindowAncestor(this);
+        CheckoutGitProjectDialog dialog = new CheckoutGitProjectDialog(parentFrame, targetDirectory);
+        dialog.setVisible(true);
+
+        // 如果克隆成功，刷新目录树
+        if (dialog.isCheckoutSuccess()) {
+            // 刷新当前目录
+            if (rootDirectory != null) {
+                setRootDirectory(rootDirectory);
+            }
+            // 通知刷新监听器
+            if (refreshListener != null) {
+                refreshListener.onTreeRefreshed();
+            }
+        }
+    }
+
+    /**
+     * 刷新指定节点
+     */
+    private void refreshNode(DefaultMutableTreeNode node, File directory) {
+        // 移除所有子节点
+        node.removeAllChildren();
+        
+        // 重新构建子树
+        buildTree(node, directory, 0);
+        
+        // 通知模型更新
+        treeModel.reload(node);
+        
+        // 通知刷新监听器
+        if (refreshListener != null) {
+            refreshListener.onTreeRefreshed();
+        }
+    }
+
+    /**
      * 目录选择监听器接口
      */
     @FunctionalInterface
     public interface DirectorySelectionListener {
         void onDirectorySelected(File directory);
+    }
+
+    /**
+     * 树刷新监听器接口
+     */
+    @FunctionalInterface
+    public interface TreeRefreshListener {
+        void onTreeRefreshed();
     }
 }
