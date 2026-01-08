@@ -22,6 +22,7 @@ public class RepoDetailsDialog extends JDialog {
     private DefaultTableModel tableModel;
     private SimpleDateFormat dateFormat;
     private JLabel remoteLabel;
+    private JLabel branchLabel;
     private JTextArea filesTextArea;
     private File currentRepoDir;
     private java.util.Map<String, String> shortIdToFullIdMap;
@@ -68,6 +69,25 @@ public class RepoDetailsDialog extends JDialog {
         remotePanel.add(remoteLabel, BorderLayout.CENTER);
 
         mainPanel.add(remotePanel);
+        mainPanel.add(Box.createVerticalStrut(10));
+
+        // Current Branch 面板
+        JPanel branchPanel = new JPanel(new BorderLayout(10, 10));
+        branchPanel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(BORDER_COLOR, 1),
+                "Current Branch",
+                javax.swing.border.TitledBorder.LEFT,
+                javax.swing.border.TitledBorder.TOP,
+                new Font("Segoe UI", Font.BOLD, 12)
+        ));
+        branchPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 60));
+
+        branchLabel = new JLabel("Loading...");
+        branchLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        branchLabel.setForeground(new Color(25, 84, 166));
+        branchPanel.add(branchLabel, BorderLayout.CENTER);
+
+        mainPanel.add(branchPanel);
         mainPanel.add(Box.createVerticalStrut(10));
 
         // 提交记录表格
@@ -360,6 +380,7 @@ public class RepoDetailsDialog extends JDialog {
     public void displayRepoDetails(File repoDir) {
         this.currentRepoDir = repoDir;
         remoteLabel.setText("Loading...");
+        branchLabel.setText("Loading...");
         tableModel.setRowCount(0);
         filesTextArea.setText("Select a commit to see changed files...");
         shortIdToFullIdMap.clear();
@@ -393,6 +414,14 @@ public class RepoDetailsDialog extends JDialog {
                         }
                         remoteText.append("</html>");
                         remoteLabel.setText(remoteText.toString());
+
+                        // 显示 Current Branch
+                        String currentBranch = data.repoInfo.getCurrentBranch();
+                        if (currentBranch != null && !currentBranch.isEmpty()) {
+                            branchLabel.setText(currentBranch);
+                        } else {
+                            branchLabel.setText("Unknown");
+                        }
                     }
 
                     // 存储所有提交记录
@@ -410,6 +439,7 @@ public class RepoDetailsDialog extends JDialog {
                 } catch (Exception e) {
                     e.printStackTrace();
                     remoteLabel.setText("Error loading repository information");
+                    branchLabel.setText("Error");
                 }
             }
         };

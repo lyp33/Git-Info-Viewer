@@ -17,6 +17,11 @@ public class AppSettings {
     private Font leftPanelFont;
     private Font rightPanelFont;
 
+    // GitLab 认证配置
+    private String gitLabPrivateToken;
+    private String gitLabUsername;
+    private String gitLabPassword;
+
     // 默认字体
     private static final Font DEFAULT_LEFT_FONT = new Font("Arial", Font.PLAIN, 12);
     private static final Font DEFAULT_RIGHT_FONT = new Font("Segoe UI", Font.PLAIN, 12);
@@ -80,6 +85,11 @@ public class AppSettings {
                 int rightSize = Integer.parseInt(props.getProperty("right.font.size", String.valueOf(DEFAULT_RIGHT_FONT_SIZE)));
                 rightPanelFont = new Font(rightName, rightStyle, rightSize);
 
+                // 加载GitLab认证配置
+                gitLabPrivateToken = props.getProperty("gitlab.private.token", "");
+                gitLabUsername = props.getProperty("gitlab.username", "");
+                gitLabPassword = props.getProperty("gitlab.password", "");
+
             } catch (IOException e) {
                 System.err.println("Error loading settings: " + e.getMessage());
                 setDefaultFonts();
@@ -107,6 +117,17 @@ public class AppSettings {
             props.setProperty("right.font.style", String.valueOf(rightPanelFont.getStyle()));
             props.setProperty("right.font.size", String.valueOf(rightPanelFont.getSize()));
 
+            // 保存GitLab认证配置
+            if (gitLabPrivateToken != null && !gitLabPrivateToken.isEmpty()) {
+                props.setProperty("gitlab.private.token", gitLabPrivateToken);
+            }
+            if (gitLabUsername != null && !gitLabUsername.isEmpty()) {
+                props.setProperty("gitlab.username", gitLabUsername);
+            }
+            if (gitLabPassword != null && !gitLabPassword.isEmpty()) {
+                props.setProperty("gitlab.password", gitLabPassword);
+            }
+
             props.store(fos, "Git Info Viewer Settings");
 
         } catch (IOException e) {
@@ -133,5 +154,30 @@ public class AppSettings {
 
     public void setRightPanelFont(Font font) {
         this.rightPanelFont = font;
+    }
+
+    // GitLab 认证配置的 getter 和 setter
+    public String getGitLabPrivateToken() {
+        return gitLabPrivateToken != null ? gitLabPrivateToken : "";
+    }
+
+    public void setGitLabPrivateToken(String token) {
+        this.gitLabPrivateToken = token;
+    }
+
+    public String getGitLabUsername() {
+        return gitLabUsername != null ? gitLabUsername : "";
+    }
+
+    public void setGitLabUsername(String username) {
+        this.gitLabUsername = username;
+    }
+
+    public String getGitLabPassword() {
+        return gitLabPassword != null ? gitLabPassword : "";
+    }
+
+    public void setGitLabPassword(String password) {
+        this.gitLabPassword = password;
     }
 }

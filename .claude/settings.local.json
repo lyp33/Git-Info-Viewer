@@ -1,20 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(mvn clean compile:*)",
-      "Bash(where mvn:*)",
-      "Bash(java:*)",
-      "Bash(mvn clean package:*)",
       "Bash(ls:*)",
-      "Bash(timeout:*)",
-      "Bash(start-git-viewer:*)",
-      "Bash(cmd.exe:*)",
-      "Bash(ping:*)",
-      "Bash(tasklist:*)",
-      "Bash(findstr:*)",
-      "Bash(taskkill:*)",
+      "Bash(find:*)",
+      "mcp__playwright__browser_navigate",
+      "Bash(mvn clean compile:*)",
       "Bash(mvn package:*)",
-      "Bash(powershell:*)"
+      "mcp__zai-mcp-server__extract_text_from_screenshot",
+      "Bash(mvn clean package:*)"
     ]
   }
 }

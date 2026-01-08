@@ -68,6 +68,13 @@ public class GitViewerApp extends JFrame {
 
         fileMenu.addSeparator();
 
+        // GitLab认证设置菜单项
+        JMenuItem gitLabSettingsItem = new JMenuItem("GitLab Authentication...");
+        gitLabSettingsItem.addActionListener(e -> showGitLabSettingsDialog());
+        fileMenu.add(gitLabSettingsItem);
+
+        fileMenu.addSeparator();
+
         // 清除Git认证信息菜单项
         JMenuItem clearCredentialsItem = new JMenuItem("Clear Git Credentials");
         clearCredentialsItem.addActionListener(e -> clearGitCredentials());
@@ -117,6 +124,11 @@ public class GitViewerApp extends JFrame {
 
     private void showSettingsDialog() {
         SettingsDialog dialog = new SettingsDialog(this);
+        dialog.setVisible(true);
+    }
+
+    private void showGitLabSettingsDialog() {
+        GitLabSettingsDialog dialog = new GitLabSettingsDialog(this);
         dialog.setVisible(true);
     }
 

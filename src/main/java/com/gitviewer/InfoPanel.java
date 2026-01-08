@@ -439,10 +439,23 @@ public class InfoPanel extends JPanel {
         branchComboBox.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         branchComboBox.setBorder(BorderFactory.createLineBorder(new Color(200, 200, 200), 1, true));
 
+        // 获取当前分支
+        String currentBranch = null;
+        if (currentDirectory != null) {
+            currentBranch = GitOperations.getCurrentBranch(currentDirectory);
+        }
+
+        // 添加分支到下拉框
         for (String branch : branches) {
             String displayName = branch.replace("refs/heads/", "");
             branchComboBox.addItem(displayName);
         }
+
+        // 设置默认选中当前分支
+        if (currentBranch != null && !currentBranch.isEmpty() && !currentBranch.equals("Unknown")) {
+            branchComboBox.setSelectedItem(currentBranch);
+        }
+
         panel.add(branchComboBox);
 
         applyButton = createStyledButton("Switch Branch", PRIMARY_COLOR);
@@ -492,10 +505,15 @@ public class InfoPanel extends JPanel {
         keyLabel.setPreferredSize(new Dimension(130, 20));
         panel.add(keyLabel, BorderLayout.WEST);
 
-        JLabel valueLabel = new JLabel(value);
-        valueLabel.setFont(new Font("Consolas", Font.PLAIN, 11));
-        valueLabel.setForeground(new Color(60, 64, 67));
-        panel.add(valueLabel, BorderLayout.CENTER);
+        // 使用 JTextField 替代 JLabel，使其可选中和复制
+        JTextField valueField = new JTextField(value);
+        valueField.setEditable(false);
+        valueField.setBorder(null);
+        valueField.setBackground(PANEL_BG_COLOR);
+        valueField.setFont(new Font("Consolas", Font.PLAIN, 11));
+        valueField.setForeground(new Color(60, 64, 67));
+        valueField.setCaretColor(new Color(60, 64, 67));
+        panel.add(valueField, BorderLayout.CENTER);
 
         return panel;
     }
@@ -827,6 +845,7 @@ public class InfoPanel extends JPanel {
         private java.util.List<String> allBranches;
         private boolean isFiltering = false;
         private javax.swing.event.DocumentListener documentListener;
+        private String initialValue; // 保存初始值
 
         public BranchCellEditor() {
             comboBox = new JComboBox<>();
@@ -840,7 +859,7 @@ public class InfoPanel extends JPanel {
                 }
             });
             
-            // 创建DocumentListener
+            // 创建DocumentListener - 只在文本变化时触发过滤
             documentListener = new javax.swing.event.DocumentListener() {
                 @Override
                 public void insertUpdate(javax.swing.event.DocumentEvent e) { 
@@ -870,31 +889,55 @@ public class InfoPanel extends JPanel {
             
             try {
                 JTextField textField = (JTextField) comboBox.getEditor().getEditorComponent();
-                String filterText = textField.getText().toLowerCase();
+                String filterText = textField.getText();
+                String filterTextLower = filterText.toLowerCase();
+                
+                // 保存当前光标位置
+                int caretPosition = textField.getCaretPosition();
                 
                 // 清空并重新填充
                 comboBox.removeAllItems();
                 
-                boolean hasMatches = false;
-                for (String branch : allBranches) {
-                    if (filterText.isEmpty() || branch.toLowerCase().contains(filterText)) {
-                        comboBox.addItem(branch);
-                        hasMatches = true;
-                    }
-                }
-                
-                // 如果没有匹配项，显示所有分支
-                if (!hasMatches && !filterText.isEmpty()) {
+                if (filterText.isEmpty()) {
+                    // 如果文本为空，显示所有分支
                     for (String branch : allBranches) {
                         comboBox.addItem(branch);
                     }
+                } else {
+                    // 根据过滤文本筛选分支
+                    boolean hasMatches = false;
+                    for (String branch : allBranches) {
+                        if (branch.toLowerCase().contains(filterTextLower)) {
+                            comboBox.addItem(branch);
+                            hasMatches = true;
+                        }
+                    }
+                    
+                    // 如果没有匹配项，显示所有分支
+                    if (!hasMatches) {
+                        for (String branch : allBranches) {
+                            comboBox.addItem(branch);
+                        }
+                    }
+                    
+                    // 显示下拉列表（只在有输入时，且组件可见且可显示时）
+                    if (comboBox.getItemCount() > 0 && comboBox.isShowing() && comboBox.isDisplayable()) {
+                        try {
+                            comboBox.showPopup();
+                        } catch (IllegalComponentStateException | IllegalArgumentException e) {
+                            // 忽略组件未完全显示时的异常
+                            // 这些异常不影响功能，只是UI渲染时序问题
+                        }
+                    }
                 }
                 
-                // 显示下拉列表
-                if (comboBox.getItemCount() > 0 && !filterText.isEmpty()) {
-                    comboBox.showPopup();
-                }
+                // 恢复文本和光标位置（重要：保持用户输入）
+                textField.setText(filterText);
+                textField.setCaretPosition(Math.min(caretPosition, filterText.length()));
                 
+            } catch (Exception e) {
+                // 捕获所有可能的异常，确保不影响主流程
+                // 这些通常是UI组件状态相关的临时问题
             } finally {
                 isFiltering = false; // 清除过滤标志
             }
@@ -922,15 +965,30 @@ public class InfoPanel extends JPanel {
                 }
             }
 
-            // 添加DocumentListener
+            // 获取文本框组件
             JTextField textField = (JTextField) comboBox.getEditor().getEditorComponent();
-            textField.getDocument().addDocumentListener(documentListener);
-
+            
+            // 移除旧的DocumentListener（如果存在）
+            textField.getDocument().removeDocumentListener(documentListener);
+            
+            // 设置初始值
             if (value != null) {
+                initialValue = value.toString();
                 comboBox.setSelectedItem(value);
-                // 设置编辑器文本
                 textField.setText(value.toString());
+            } else {
+                initialValue = "";
+                textField.setText("");
             }
+            
+            // 添加新的DocumentListener
+            textField.getDocument().addDocumentListener(documentListener);
+            
+            // 确保文本框可以正常编辑（选中所有文本，方便用户直接输入）
+            SwingUtilities.invokeLater(() -> {
+                textField.requestFocusInWindow();
+                textField.selectAll();
+            });
 
             return comboBox;
         }

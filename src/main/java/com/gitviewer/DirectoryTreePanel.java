@@ -82,6 +82,35 @@ public class DirectoryTreePanel extends JPanel {
             }
         });
 
+        // 添加树展开监听器，懒加载子节点
+        tree.addTreeExpansionListener(new javax.swing.event.TreeExpansionListener() {
+            @Override
+            public void treeExpanded(javax.swing.event.TreeExpansionEvent event) {
+                DefaultMutableTreeNode node = (DefaultMutableTreeNode) event.getPath().getLastPathComponent();
+                Object userObject = node.getUserObject();
+                
+                if (userObject instanceof File) {
+                    File directory = (File) userObject;
+                    
+                    // 检查是否有 "Loading..." 占位节点
+                    if (node.getChildCount() == 1) {
+                        DefaultMutableTreeNode firstChild = (DefaultMutableTreeNode) node.getChildAt(0);
+                        if ("Loading...".equals(firstChild.getUserObject())) {
+                            // 移除占位节点
+                            treeModel.removeNodeFromParent(firstChild);
+                            // 加载实际的子节点
+                            loadChildren(node, directory);
+                        }
+                    }
+                }
+            }
+
+            @Override
+            public void treeCollapsed(javax.swing.event.TreeExpansionEvent event) {
+                // 不需要处理折叠事件
+            }
+        });
+
         // 添加右键菜单
         tree.addMouseListener(new MouseAdapter() {
             @Override
@@ -219,6 +248,42 @@ public class DirectoryTreePanel extends JPanel {
                     // 添加一个占位节点，表示该目录有子节点
                     treeModel.insertNodeInto(new DefaultMutableTreeNode("Loading..."), childNode, 0);
                 }
+            }
+        }
+    }
+
+    /**
+     * 懒加载子节点（当用户展开节点时调用）
+     */
+    private void loadChildren(DefaultMutableTreeNode parentNode, File parentFile) {
+        File[] children = parentFile.listFiles();
+        if (children == null) {
+            return;
+        }
+
+        // 排序：目录在前，文件在后
+        java.util.Arrays.sort(children, (f1, f2) -> {
+            if (f1.isDirectory() && !f2.isDirectory()) {
+                return -1;
+            } else if (!f1.isDirectory() && f2.isDirectory()) {
+                return 1;
+            } else {
+                return f1.getName().compareToIgnoreCase(f2.getName());
+            }
+        });
+
+        for (File child : children) {
+            // 跳过隐藏文件和.git目录
+            if (child.getName().startsWith(".")) {
+                continue;
+            }
+
+            DefaultMutableTreeNode childNode = new DefaultMutableTreeNode(child);
+            treeModel.insertNodeInto(childNode, parentNode, parentNode.getChildCount());
+
+            // 如果是目录，添加占位节点
+            if (child.isDirectory()) {
+                treeModel.insertNodeInto(new DefaultMutableTreeNode("Loading..."), childNode, 0);
             }
         }
     }
