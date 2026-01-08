@@ -7,6 +7,7 @@ import org.eclipse.jgit.transport.CredentialsProvider;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 
 import javax.swing.*;
+import javax.swing.border.TitledBorder;
 import javax.swing.event.CellEditorListener;
 import javax.swing.event.ChangeEvent;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -258,12 +259,17 @@ public class CheckoutGitProjectDialog extends JDialog {
         // 日志输出区域
         JPanel logPanel = new JPanel(new BorderLayout());
         logPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        logPanel.setBorder(BorderFactory.createTitledBorder("Log"));
+        logPanel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(BORDER_COLOR, 1),
+                "Log",
+                TitledBorder.LEFT,
+                TitledBorder.TOP
+        ));
         
         logTextArea = new JTextArea(8, 50);
         logTextArea.setEditable(false);
         logTextArea.setFont(new Font("Consolas", Font.PLAIN, 11));
-        logTextArea.setBackground(new Color(250, 250, 250));
+        logTextArea.setBackground(Color.WHITE);
         JScrollPane logScroll = new JScrollPane(logTextArea);
         logPanel.add(logScroll, BorderLayout.CENTER);
         

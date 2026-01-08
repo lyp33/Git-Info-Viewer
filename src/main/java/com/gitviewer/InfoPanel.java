@@ -122,24 +122,31 @@ public class InfoPanel extends JPanel {
     private void initializeUI() {
         setLayout(new BorderLayout());
         setBackground(PANEL_BG_COLOR);
+        setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
         // 创建顶部标签 - 更现代化
-        JLabel titleLabel = new JLabel("Directory Information", SwingConstants.CENTER);
-        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 18));
-        titleLabel.setForeground(new Color(51, 51, 51));
-        titleLabel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
-        add(titleLabel, BorderLayout.NORTH);
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBackground(PANEL_BG_COLOR);
+        headerPanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
+        
+        JLabel titleLabel = new JLabel("Directory Information");
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        titleLabel.setForeground(new Color(32, 33, 36));
+        headerPanel.add(titleLabel, BorderLayout.WEST);
+        
+        add(headerPanel, BorderLayout.NORTH);
 
         // 创建主面板用于放置内容
         mainPanel = new JPanel();
         mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
         mainPanel.setBackground(PANEL_BG_COLOR);
-        mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
 
         scrollPane = new JScrollPane(mainPanel);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         scrollPane.setBorder(null);
         scrollPane.setBackground(PANEL_BG_COLOR);
+        scrollPane.getViewport().setBackground(PANEL_BG_COLOR);
         add(scrollPane, BorderLayout.CENTER);
 
         // 创建底部日志面板
@@ -156,7 +163,7 @@ public class InfoPanel extends JPanel {
         logTextArea = new JTextArea();
         logTextArea.setEditable(false);
         logTextArea.setFont(new Font("Consolas", Font.PLAIN, 11));
-        logTextArea.setBackground(new Color(250, 250, 250));
+        logTextArea.setBackground(Color.WHITE);
         logTextArea.setForeground(new Color(60, 64, 67));
 
         JScrollPane logScroll = new JScrollPane(logTextArea);
@@ -167,37 +174,25 @@ public class InfoPanel extends JPanel {
     }
 
     private JPanel createBatchSwitchPanel() {
-        JPanel panel = new JPanel(new BorderLayout(10, 10));
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER_COLOR, 1),
-                BorderFactory.createEmptyBorder(12, 15, 12, 15)
-        ));
-        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 60));
-
-        // 左侧：标题和描述
-        JPanel leftPanel = new JPanel(new BorderLayout());
-        leftPanel.setBorder(BorderFactory.createTitledBorder(
-                BorderFactory.createLineBorder(BORDER_COLOR, 1),
-                "Batch Switch All Git Repos",
-                javax.swing.border.TitledBorder.LEFT,
-                javax.swing.border.TitledBorder.TOP,
-                new Font("Segoe UI", Font.BOLD, 12),
-                new Color(95, 99, 104)
-        ));
-
-        // 右侧：输入框和按钮
-        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        JPanel outerPanel = createModernTitledPanel("Batch Switch All Git Repos");
+        outerPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
+        
+        JPanel contentPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        contentPanel.setBackground(PANEL_BG_COLOR);
 
         JLabel branchLabel = new JLabel("Target Branch:");
         branchLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        rightPanel.add(branchLabel);
+        contentPanel.add(branchLabel);
 
         batchBranchTextField = new JTextField();
         batchBranchTextField.setPreferredSize(new Dimension(200, 28));
         batchBranchTextField.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        batchBranchTextField.setBorder(BorderFactory.createLineBorder(new Color(200, 200, 200), 1, true));
+        batchBranchTextField.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(218, 220, 224), 1),
+            BorderFactory.createEmptyBorder(4, 8, 4, 8)
+        ));
         batchBranchTextField.setToolTipText("Enter the branch name to switch all Git repositories to");
-        rightPanel.add(batchBranchTextField);
+        contentPanel.add(batchBranchTextField);
 
         applyAllButton = new JButton("Switch All");
         applyAllButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
@@ -209,47 +204,33 @@ public class InfoPanel extends JPanel {
         applyAllButton.setPreferredSize(new Dimension(100, 32));
         applyAllButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
         applyAllButton.addActionListener(this::onApplyAll);
-        rightPanel.add(applyAllButton);
+        contentPanel.add(applyAllButton);
 
-        panel.add(leftPanel, BorderLayout.WEST);
-        panel.add(rightPanel, BorderLayout.EAST);
-
-        return panel;
+        outerPanel.add(contentPanel, BorderLayout.CENTER);
+        return outerPanel;
     }
     
     private JPanel createMessageSearchPanel() {
-        JPanel panel = new JPanel(new BorderLayout(10, 10));
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER_COLOR, 1),
-                BorderFactory.createEmptyBorder(12, 15, 12, 15)
-        ));
-        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 60));
-
-        // 左侧：标题和描述
-        JPanel leftPanel = new JPanel(new BorderLayout());
-        leftPanel.setBorder(BorderFactory.createTitledBorder(
-                BorderFactory.createLineBorder(BORDER_COLOR, 1),
-                "Search Commit Messages in Selected Repos",
-                javax.swing.border.TitledBorder.LEFT,
-                javax.swing.border.TitledBorder.TOP,
-                new Font("Segoe UI", Font.BOLD, 12),
-                new Color(95, 99, 104)
-        ));
-
-        // 右侧：所有输入框在同一行
-        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        JPanel outerPanel = createModernTitledPanel("Search Commit Messages in Selected Repos");
+        outerPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
+        
+        JPanel contentPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        contentPanel.setBackground(PANEL_BG_COLOR);
 
         // 关键词输入框
         JLabel messageLabel = new JLabel("Keywords:");
         messageLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        rightPanel.add(messageLabel);
+        contentPanel.add(messageLabel);
 
         messageSearchTextField = new JTextField();
         messageSearchTextField.setPreferredSize(new Dimension(150, 28));
         messageSearchTextField.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        messageSearchTextField.setBorder(BorderFactory.createLineBorder(new Color(200, 200, 200), 1, true));
+        messageSearchTextField.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(218, 220, 224), 1),
+            BorderFactory.createEmptyBorder(4, 8, 4, 8)
+        ));
         messageSearchTextField.setToolTipText("Enter keywords to search (optional - leave empty to search all)");
-        rightPanel.add(messageSearchTextField);
+        contentPanel.add(messageSearchTextField);
 
         // 准备当天日期字符串
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
@@ -258,28 +239,34 @@ public class InfoPanel extends JPanel {
         // 开始日期
         JLabel startLabel = new JLabel("Start Date:");
         startLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        rightPanel.add(startLabel);
+        contentPanel.add(startLabel);
 
         startDateField = new JTextField();
         startDateField.setPreferredSize(new Dimension(120, 28));
         startDateField.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        startDateField.setBorder(BorderFactory.createLineBorder(new Color(200, 200, 200), 1, true));
-        startDateField.setText(todayDate); // 默认显示当天日期
+        startDateField.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(218, 220, 224), 1),
+            BorderFactory.createEmptyBorder(4, 8, 4, 8)
+        ));
+        startDateField.setText(todayDate);
         startDateField.setToolTipText("Format: yyyy-MM-dd (optional, default: today)");
-        rightPanel.add(startDateField);
+        contentPanel.add(startDateField);
 
         // 结束日期
         JLabel endLabel = new JLabel("End Date:");
         endLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        rightPanel.add(endLabel);
+        contentPanel.add(endLabel);
 
         endDateField = new JTextField();
         endDateField.setPreferredSize(new Dimension(120, 28));
         endDateField.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        endDateField.setBorder(BorderFactory.createLineBorder(new Color(200, 200, 200), 1, true));
-        endDateField.setText(todayDate); // 默认显示当天日期
+        endDateField.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(218, 220, 224), 1),
+            BorderFactory.createEmptyBorder(4, 8, 4, 8)
+        ));
+        endDateField.setText(todayDate);
         endDateField.setToolTipText("Format: yyyy-MM-dd (optional, default: today)");
-        rightPanel.add(endDateField);
+        contentPanel.add(endDateField);
 
         // 搜索按钮
         searchMessageButton = new JButton("Global Search");
@@ -292,35 +279,18 @@ public class InfoPanel extends JPanel {
         searchMessageButton.setPreferredSize(new Dimension(120, 32));
         searchMessageButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
         searchMessageButton.addActionListener(this::onSearchMessages);
-        rightPanel.add(searchMessageButton);
+        contentPanel.add(searchMessageButton);
 
-        panel.add(leftPanel, BorderLayout.WEST);
-        panel.add(rightPanel, BorderLayout.EAST);
-
-        return panel;
+        outerPanel.add(contentPanel, BorderLayout.CENTER);
+        return outerPanel;
     }
 
     private JPanel createBatchCherryPickPanel() {
-        JPanel panel = new JPanel(new BorderLayout(10, 10));
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER_COLOR, 1),
-                BorderFactory.createEmptyBorder(12, 15, 12, 15)
-        ));
-        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 60));
-
-        // 左侧：标题和描述
-        JPanel leftPanel = new JPanel(new BorderLayout());
-        leftPanel.setBorder(BorderFactory.createTitledBorder(
-                BorderFactory.createLineBorder(BORDER_COLOR, 1),
-                "Batch Cherry-Pick Commits",
-                javax.swing.border.TitledBorder.LEFT,
-                javax.swing.border.TitledBorder.TOP,
-                new Font("Segoe UI", Font.BOLD, 12),
-                new Color(95, 99, 104)
-        ));
-
-        // 右侧：按钮
-        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        JPanel outerPanel = createModernTitledPanel("Batch Cherry-Pick Commits");
+        outerPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
+        
+        JPanel contentPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        contentPanel.setBackground(PANEL_BG_COLOR);
 
         JButton cherryPickButton = new JButton("Batch Cherry Pick");
         cherryPickButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
@@ -332,12 +302,10 @@ public class InfoPanel extends JPanel {
         cherryPickButton.setPreferredSize(new Dimension(140, 32));
         cherryPickButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
         cherryPickButton.addActionListener(this::onBatchCherryPick);
-        rightPanel.add(cherryPickButton);
+        contentPanel.add(cherryPickButton);
 
-        panel.add(leftPanel, BorderLayout.WEST);
-        panel.add(rightPanel, BorderLayout.EAST);
-
-        return panel;
+        outerPanel.add(contentPanel, BorderLayout.CENTER);
+        return outerPanel;
     }
 
     private void appendLog(String message) {
@@ -354,19 +322,26 @@ public class InfoPanel extends JPanel {
         }
     }
 
-    public void displayInfo(File directory) {
-        this.currentDirectory = directory;
+    public void displayInfo(File fileOrDirectory) {
+        this.currentDirectory = fileOrDirectory;
         mainPanel.removeAll();
 
-        addDirectoryTitle(directory);
-
-        if (GitInfoExtractor.isGitRepository(directory)) {
-            addGitRepositoryPanel(directory);
+        // 检查是文件还是目录
+        if (fileOrDirectory.isFile()) {
+            // 显示文件的提交历史
+            displayFileCommitHistory(fileOrDirectory);
         } else {
-            addNotGitRepoPanel();
-        }
+            // 显示目录信息
+            addDirectoryTitle(fileOrDirectory);
 
-        addSubdirectoriesTable(directory);
+            if (GitInfoExtractor.isGitRepository(fileOrDirectory)) {
+                addGitRepositoryPanel(fileOrDirectory);
+            } else {
+                addNotGitRepoPanel();
+            }
+
+            addSubdirectoriesTable(fileOrDirectory);
+        }
 
         mainPanel.revalidate();
         mainPanel.repaint();
@@ -1012,7 +987,7 @@ public class InfoPanel extends JPanel {
             setText("Switch");
             setFont(new Font("Segoe UI", Font.BOLD, 11));
             setFocusPainted(false);
-            setBorderPainted(true);
+            setBorderPainted(false); // 移除边框，扁平化
             setOpaque(true);
             setCursor(new Cursor(Cursor.HAND_CURSOR));
         }
@@ -1470,14 +1445,38 @@ public class InfoPanel extends JPanel {
     }
 
     private Border createStyledBorder(String title) {
-        return BorderFactory.createTitledBorder(
+        // 返回扁平的边框，不使用TitledBorder
+        return BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(BORDER_COLOR, 1),
-                title,
-                javax.swing.border.TitledBorder.LEFT,
-                javax.swing.border.TitledBorder.TOP,
-                new Font("Segoe UI", Font.BOLD, 13),
-                new Color(95, 99, 104)
+                BorderFactory.createEmptyBorder(5, 5, 5, 5)
         );
+    }
+    
+    /**
+     * 创建现代化的扁平标题面板（替代TitledBorder）
+     */
+    private JPanel createModernTitledPanel(String title) {
+        JPanel outerPanel = new JPanel(new BorderLayout());
+        outerPanel.setBackground(PANEL_BG_COLOR);
+        outerPanel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0)); // 只保留上下边距，移除边框和标题
+        
+        // 不再显示标题栏
+        
+        return outerPanel;
+    }
+    
+    // 创建带标题的扁平面板
+    private JPanel createFlatTitledPanel(String title) {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(createStyledBorder(title));
+        
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        titleLabel.setForeground(new Color(95, 99, 104));
+        titleLabel.setBorder(BorderFactory.createEmptyBorder(5, 5, 10, 5));
+        panel.add(titleLabel, BorderLayout.NORTH);
+        
+        return panel;
     }
 
     private String colorToHex(Color color) {
@@ -1893,6 +1892,302 @@ public class InfoPanel extends JPanel {
             return remote.substring(0, colonIndex);
         }
         return remote;
+    }
+    
+    /**
+     * 显示文件的提交历史
+     */
+    private void displayFileCommitHistory(File file) {
+        // 找到Git仓库根目录
+        File repoDir = findGitRepository(file.getParentFile());
+        
+        if (repoDir == null) {
+            JLabel label = new JLabel("This file is not in a Git repository.", SwingConstants.CENTER);
+            label.setFont(new Font("Segoe UI", Font.ITALIC, 14));
+            label.setForeground(new Color(154, 160, 166));
+            mainPanel.add(label);
+            return;
+        }
+        
+        // 计算文件相对于仓库根目录的路径
+        String relativePath = repoDir.toPath().relativize(file.toPath()).toString().replace("\\", "/");
+        
+        // 添加文件标题
+        JPanel titlePanel = new JPanel(new BorderLayout());
+        titlePanel.setBackground(PANEL_BG_COLOR);
+        titlePanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 10, 5));
+        titlePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
+
+        JLabel pathLabel = new JLabel("<html><div style='padding: 8px 12px; background: #E8F0FE; border-radius: 6px;'>" +
+                "<span style='color: #1967D2; font-weight: bold;'>File:</span> " +
+                "<span style='color: #3C4043;'>" + file.getName() + "</span><br>" +
+                "<span style='color: #1967D2; font-weight: bold;'>Path:</span> " +
+                "<span style='color: #3C4043;'>" + relativePath + "</span></div></html>");
+        pathLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        titlePanel.add(pathLabel, BorderLayout.CENTER);
+
+        mainPanel.add(titlePanel);
+        mainPanel.add(Box.createVerticalStrut(10));
+        
+        // 创建提交历史表格
+        JPanel historyPanel = new JPanel(new BorderLayout());
+        historyPanel.setBorder(createStyledBorder("Commit History"));
+        historyPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 600));
+        
+        String[] columnNames = {"Commit ID", "Date", "Author", "Message"};
+        DefaultTableModel tableModel = new DefaultTableModel(columnNames, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        
+        JTable historyTable = new JTable(tableModel) {
+            @Override
+            public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+                Component c = super.prepareRenderer(renderer, row, column);
+                if (!isRowSelected(row)) {
+                    c.setBackground(row % 2 == 0 ? EVEN_ROW_COLOR : ODD_ROW_COLOR);
+                }
+                return c;
+            }
+        };
+        
+        historyTable.setAutoCreateRowSorter(true);
+        historyTable.setRowHeight(28);
+        historyTable.setIntercellSpacing(new Dimension(0, 0));
+        historyTable.setShowGrid(false);
+        historyTable.setSelectionBackground(new Color(187, 222, 251));
+        historyTable.setSelectionForeground(new Color(0, 0, 0));
+        historyTable.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        
+        // 表头样式
+        JTableHeader header = historyTable.getTableHeader();
+        header.setBackground(HEADER_BG_COLOR);
+        header.setForeground(new Color(95, 99, 104));
+        header.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        header.setReorderingAllowed(false);
+        header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER_COLOR));
+        header.setPreferredSize(new Dimension(header.getPreferredSize().width, 35));
+        
+        // 设置列宽
+        historyTable.getColumnModel().getColumn(0).setPreferredWidth(100);  // Commit Code
+        historyTable.getColumnModel().getColumn(1).setPreferredWidth(150);  // Date
+        historyTable.getColumnModel().getColumn(2).setPreferredWidth(120);  // Author
+        historyTable.getColumnModel().getColumn(3).setPreferredWidth(450);  // Message
+        
+        JScrollPane tableScroll = new JScrollPane(historyTable);
+        tableScroll.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1));
+        historyPanel.add(tableScroll, BorderLayout.CENTER);
+        
+        mainPanel.add(historyPanel);
+        
+        // 添加双击监听器，显示文件diff
+        final File finalRepoDir = repoDir;
+        final String finalRelativePath = relativePath;
+        historyTable.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    int selectedRow = historyTable.getSelectedRow();
+                    if (selectedRow >= 0) {
+                        int modelRow = historyTable.convertRowIndexToModel(selectedRow);
+                        String commitId = (String) tableModel.getValueAt(modelRow, 0);
+                        // 现在表格中直接存储完整的commit ID
+                        showFileDiff(finalRepoDir, finalRelativePath, commitId);
+                    }
+                }
+            }
+        });
+        
+        // 异步加载提交历史
+        SwingWorker<java.util.List<GitInfoExtractor.GitCommitInfo>, Void> worker = 
+            new SwingWorker<java.util.List<GitInfoExtractor.GitCommitInfo>, Void>() {
+            @Override
+            protected java.util.List<GitInfoExtractor.GitCommitInfo> doInBackground() throws Exception {
+                return GitInfoExtractor.getFileCommitHistory(finalRepoDir, finalRelativePath, 100);
+            }
+            
+            @Override
+            protected void done() {
+                try {
+                    java.util.List<GitInfoExtractor.GitCommitInfo> commits = get();
+                    for (GitInfoExtractor.GitCommitInfo commit : commits) {
+                        String fullId = commit.getCommitId();
+                        
+                        // 不再需要shortIdToFullIdMap，直接使用完整ID
+                        
+                        Object[] row = {
+                            fullId, // 显示完整的commit ID
+                            dateFormat.format(new Date(commit.getCommitTime())),
+                            commit.getAuthor(),
+                            truncateMessage(commit.getMessage())
+                        };
+                        tableModel.addRow(row);
+                    }
+                    
+                    if (commits.isEmpty()) {
+                        JLabel emptyLabel = new JLabel("No commit history found for this file.", SwingConstants.CENTER);
+                        emptyLabel.setFont(new Font("Segoe UI", Font.ITALIC, 12));
+                        emptyLabel.setForeground(new Color(154, 160, 166));
+                        historyPanel.add(emptyLabel, BorderLayout.SOUTH);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    JLabel errorLabel = new JLabel("Error loading commit history: " + e.getMessage(), SwingConstants.CENTER);
+                    errorLabel.setFont(new Font("Segoe UI", Font.ITALIC, 12));
+                    errorLabel.setForeground(Color.RED);
+                    historyPanel.add(errorLabel, BorderLayout.SOUTH);
+                }
+                mainPanel.revalidate();
+                mainPanel.repaint();
+            }
+        };
+        
+        worker.execute();
+    }
+    
+    /**
+     * 查找文件所在的Git仓库根目录
+     */
+    private File findGitRepository(File directory) {
+        File current = directory;
+        while (current != null) {
+            if (GitInfoExtractor.isGitRepository(current)) {
+                return current;
+            }
+            current = current.getParentFile();
+        }
+        return null;
+    }
+    
+    /**
+     * 显示文件差异对比对话框
+     */
+    private void showFileDiff(File repoDir, String filePath, String commitId) {
+        FileDiffDialog dialog = new FileDiffDialog(
+            (Frame) SwingUtilities.getWindowAncestor(this),
+            repoDir,
+            filePath,
+            commitId
+        );
+        dialog.setVisible(true);
+    }
+    
+    /**
+     * 在浏览器中打开GitLab的commit页面
+     */
+    private void openCommitInBrowser(File repoDir, String commitId) {
+        try {
+            // 获取远程URL
+            String remoteUrl = getRemoteUrl(repoDir);
+            if (remoteUrl == null || remoteUrl.equals("No remote URL configured") || remoteUrl.startsWith("Error")) {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "Cannot find remote URL for this repository.",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+                );
+                return;
+            }
+            
+            // 构建commit URL
+            String commitUrl = buildCommitUrl(remoteUrl, commitId);
+            if (commitUrl == null) {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "Cannot build commit URL.",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+                );
+                return;
+            }
+            
+            // 在浏览器中打开
+            if (java.awt.Desktop.isDesktopSupported()) {
+                java.awt.Desktop desktop = java.awt.Desktop.getDesktop();
+                if (desktop.isSupported(java.awt.Desktop.Action.BROWSE)) {
+                    desktop.browse(new java.net.URI(commitUrl));
+                } else {
+                    showUrlDialog(commitUrl);
+                }
+            } else {
+                showUrlDialog(commitUrl);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(
+                this,
+                "Error opening browser: " + e.getMessage(),
+                "Error",
+                JOptionPane.ERROR_MESSAGE
+            );
+        }
+    }
+    
+    /**
+     * 显示URL对话框（当无法自动打开浏览器时）
+     */
+    private void showUrlDialog(String url) {
+        JTextArea textArea = new JTextArea(url);
+        textArea.setEditable(false);
+        textArea.setLineWrap(true);
+        textArea.setWrapStyleWord(true);
+        textArea.setCaretPosition(0);
+        
+        JScrollPane scrollPane = new JScrollPane(textArea);
+        scrollPane.setPreferredSize(new Dimension(500, 100));
+        
+        JOptionPane.showMessageDialog(
+            this,
+            scrollPane,
+            "Commit URL (Please copy and open in browser)",
+            JOptionPane.INFORMATION_MESSAGE
+        );
+    }
+    
+    /**
+     * 获取Git仓库的远程URL
+     */
+    private String getRemoteUrl(File repoDir) {
+        try {
+            org.eclipse.jgit.storage.file.FileRepositoryBuilder builder = new org.eclipse.jgit.storage.file.FileRepositoryBuilder();
+            org.eclipse.jgit.lib.Repository repository = builder
+                    .setGitDir(new java.io.File(repoDir, ".git"))
+                    .readEnvironment()
+                    .findGitDir()
+                    .build();
+            
+            String url = repository.getConfig().getString("remote", "origin", "url");
+            repository.close();
+            
+            return url != null ? url : "No remote URL configured";
+        } catch (Exception e) {
+            return "Error reading remote URL: " + e.getMessage();
+        }
+    }
+    
+    /**
+     * 构建commit的超链接URL
+     */
+    private String buildCommitUrl(String remoteUrl, String commitId) {
+        if (remoteUrl == null || remoteUrl.equals("No remote URL configured") || remoteUrl.startsWith("Error")) {
+            return null;
+        }
+        
+        try {
+            // 移除.git后缀
+            String baseUrl = remoteUrl;
+            if (baseUrl.endsWith(".git")) {
+                baseUrl = baseUrl.substring(0, baseUrl.length() - 4);
+            }
+            
+            // 构建commit URL
+            // 对于GitLab: /-/commit/
+            return baseUrl + "/-/commit/" + commitId;
+        } catch (Exception e) {
+            return null;
+        }
     }
     
     /**

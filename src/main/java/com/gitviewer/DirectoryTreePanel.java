@@ -53,17 +53,89 @@ public class DirectoryTreePanel extends JPanel {
     }
 
     private void initializeComponents() {
-        // 创建顶部标签
+        setBackground(new Color(255, 255, 255));
+        setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        
+        // 创建顶部标签 - 现代化样式
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBackground(new Color(255, 255, 255));
+        headerPanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
+        
         JLabel titleLabel = new JLabel("Directory Tree");
-        titleLabel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
-        add(titleLabel, BorderLayout.NORTH);
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        titleLabel.setForeground(new Color(32, 33, 36));
+        headerPanel.add(titleLabel, BorderLayout.WEST);
+        
+        add(headerPanel, BorderLayout.NORTH);
 
         // 创建树组件
         DefaultMutableTreeNode root = new DefaultMutableTreeNode("Select a directory");
         treeModel = new DefaultTreeModel(root);
         tree = new JTree(treeModel);
         tree.setRootVisible(true);
-        tree.setShowsRootHandles(true);
+        tree.setShowsRootHandles(true); // 显示展开/折叠图标
+        tree.setBackground(new Color(255, 255, 255));
+        tree.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        tree.setRowHeight(28);
+        tree.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+
+        // 设置自定义渲染器，只显示文件名/目录名
+        tree.setCellRenderer(new DefaultTreeCellRenderer() {
+            @Override
+            public Component getTreeCellRendererComponent(JTree tree, Object value,
+                    boolean selected, boolean expanded, boolean leaf, int row, boolean hasFocus) {
+                
+                // 调用父类方法获取默认组件
+                super.getTreeCellRendererComponent(tree, value, selected, expanded, leaf, row, hasFocus);
+                
+                // 设置字体
+                setFont(new Font("Segoe UI", Font.PLAIN, 13));
+                
+                // 设置颜色 - 确保文字可见
+                if (selected) {
+                    setBackgroundSelectionColor(new Color(232, 240, 254));
+                    setTextSelectionColor(new Color(26, 115, 232));
+                    setBorderSelectionColor(null);
+                    setBackground(new Color(232, 240, 254));
+                    setForeground(new Color(26, 115, 232));
+                } else {
+                    setBackgroundNonSelectionColor(Color.WHITE);
+                    setTextNonSelectionColor(new Color(60, 64, 67));
+                    setBackground(Color.WHITE);
+                    setForeground(new Color(60, 64, 67));
+                }
+                
+                // 设置为不透明，确保背景色显示
+                setOpaque(true);
+                
+                // 如果节点包含 File 对象，只显示文件名
+                if (value instanceof DefaultMutableTreeNode) {
+                    DefaultMutableTreeNode node = (DefaultMutableTreeNode) value;
+                    Object userObject = node.getUserObject();
+                    
+                    if (userObject instanceof File) {
+                        File file = (File) userObject;
+                        setText(file.getName());
+                        
+                        // 设置图标
+                        if (file.isDirectory()) {
+                            if (expanded) {
+                                setIcon(UIManager.getIcon("Tree.openIcon"));
+                            } else {
+                                setIcon(UIManager.getIcon("Tree.closedIcon"));
+                            }
+                        } else {
+                            setIcon(UIManager.getIcon("Tree.leafIcon"));
+                        }
+                    } else {
+                        // 对于非 File 对象（如 "Loading..." 或根节点），使用默认显示
+                        setText(userObject.toString());
+                    }
+                }
+                
+                return this;
+            }
+        });
 
         // Note: SINGLE_TREE_SELECTION is the default mode for JTree
         // tree.setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
@@ -83,9 +155,9 @@ public class DirectoryTreePanel extends JPanel {
         });
 
         // 添加树展开监听器，懒加载子节点
-        tree.addTreeExpansionListener(new javax.swing.event.TreeExpansionListener() {
+        tree.addTreeWillExpandListener(new javax.swing.event.TreeWillExpandListener() {
             @Override
-            public void treeExpanded(javax.swing.event.TreeExpansionEvent event) {
+            public void treeWillExpand(javax.swing.event.TreeExpansionEvent event) throws javax.swing.tree.ExpandVetoException {
                 DefaultMutableTreeNode node = (DefaultMutableTreeNode) event.getPath().getLastPathComponent();
                 Object userObject = node.getUserObject();
                 
@@ -100,13 +172,15 @@ public class DirectoryTreePanel extends JPanel {
                             treeModel.removeNodeFromParent(firstChild);
                             // 加载实际的子节点
                             loadChildren(node, directory);
+                            // 刷新节点
+                            treeModel.nodeStructureChanged(node);
                         }
                     }
                 }
             }
 
             @Override
-            public void treeCollapsed(javax.swing.event.TreeExpansionEvent event) {
+            public void treeWillCollapse(javax.swing.event.TreeExpansionEvent event) throws javax.swing.tree.ExpandVetoException {
                 // 不需要处理折叠事件
             }
         });
@@ -130,18 +204,25 @@ public class DirectoryTreePanel extends JPanel {
 
         // 添加滚动面板
         JScrollPane scrollPane = new JScrollPane(tree);
+        scrollPane.setBorder(BorderFactory.createLineBorder(Color.WHITE, 1)); // 使用白色边框
+        scrollPane.getViewport().setBackground(Color.WHITE);
         add(scrollPane, BorderLayout.CENTER);
 
-        // 添加底部路径输入框
-        JPanel bottomPanel = new JPanel(new BorderLayout(5, 5));
-        bottomPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+        // 添加底部路径输入框 - 现代化样式
+        JPanel bottomPanel = new JPanel(new BorderLayout(8, 0));
+        bottomPanel.setBackground(new Color(255, 255, 255));
+        bottomPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 0, 10)); // 左右各10像素边距
 
-        JLabel pathLabel = new JLabel("Root Path:");
-        pathLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        bottomPanel.add(pathLabel, BorderLayout.WEST);
+        // 移除了文件夹图标
 
         pathTextField = new JTextField();
         pathTextField.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        pathTextField.setBackground(new Color(248, 249, 250));
+        pathTextField.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(Color.WHITE, 1), // 白色边框
+            BorderFactory.createEmptyBorder(4, 10, 4, 10)
+        ));
+        pathTextField.setPreferredSize(new Dimension(0, 28)); // 缩短高度到28像素
         pathTextField.setToolTipText("Enter directory path and press Enter to navigate");
         // 添加回车键监听
         pathTextField.addActionListener(e -> navigateToPath());
@@ -320,39 +401,143 @@ public class DirectoryTreePanel extends JPanel {
 
         if (!(userObject instanceof File)) return;
 
-        File selectedDir = (File) userObject;
-        if (!selectedDir.isDirectory()) return;
+        File selectedFile = (File) userObject;
 
         // 创建右键菜单
         JPopupMenu popupMenu = new JPopupMenu();
 
-        // New Folder 菜单项
-        JMenuItem newFolderItem = new JMenuItem("New Folder");
-        newFolderItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        newFolderItem.addActionListener(event -> {
-            showNewFolderDialog(node, selectedDir);
-        });
-        popupMenu.add(newFolderItem);
+        if (selectedFile.isFile()) {
+            // 文件的右键菜单
+            
+            // Open 菜单项 - 用默认程序打开文件
+            JMenuItem openItem = new JMenuItem("Open");
+            openItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            openItem.addActionListener(event -> {
+                openFile(selectedFile);
+            });
+            popupMenu.add(openItem);
 
-        // Checkout New Git Project 菜单项
-        JMenuItem checkoutItem = new JMenuItem("Checkout New Git Project");
-        checkoutItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        checkoutItem.addActionListener(event -> {
-            showCheckoutDialog(selectedDir);
-        });
-        popupMenu.add(checkoutItem);
+            // Open Folder 菜单项 - 打开文件所在的目录
+            JMenuItem openFolderItem = new JMenuItem("Open Folder");
+            openFolderItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            openFolderItem.addActionListener(event -> {
+                openFolder(selectedFile.getParentFile());
+            });
+            popupMenu.add(openFolderItem);
 
-        popupMenu.addSeparator();
+        } else if (selectedFile.isDirectory()) {
+            // 目录的右键菜单
+            
+            // Open Folder 菜单项 - 打开目录
+            JMenuItem openFolderItem = new JMenuItem("Open Folder");
+            openFolderItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            openFolderItem.addActionListener(event -> {
+                openFolder(selectedFile);
+            });
+            popupMenu.add(openFolderItem);
 
-        // 刷新菜单项
-        JMenuItem refreshItem = new JMenuItem("Refresh");
-        refreshItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        refreshItem.addActionListener(event -> {
-            refreshNode(node, selectedDir);
-        });
-        popupMenu.add(refreshItem);
+            popupMenu.addSeparator();
+
+            // New Folder 菜单项
+            JMenuItem newFolderItem = new JMenuItem("New Folder");
+            newFolderItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            newFolderItem.addActionListener(event -> {
+                showNewFolderDialog(node, selectedFile);
+            });
+            popupMenu.add(newFolderItem);
+
+            // Checkout New Git Project 菜单项
+            JMenuItem checkoutItem = new JMenuItem("Checkout New Git Project");
+            checkoutItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            checkoutItem.addActionListener(event -> {
+                showCheckoutDialog(selectedFile);
+            });
+            popupMenu.add(checkoutItem);
+
+            popupMenu.addSeparator();
+
+            // 刷新菜单项
+            JMenuItem refreshItem = new JMenuItem("Refresh");
+            refreshItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            refreshItem.addActionListener(event -> {
+                refreshNode(node, selectedFile);
+            });
+            popupMenu.add(refreshItem);
+        }
 
         popupMenu.show(tree, e.getX(), e.getY());
+    }
+
+    /**
+     * 用默认程序打开文件
+     */
+    private void openFile(File file) {
+        try {
+            if (Desktop.isDesktopSupported()) {
+                Desktop desktop = Desktop.getDesktop();
+                if (desktop.isSupported(Desktop.Action.OPEN)) {
+                    desktop.open(file);
+                } else {
+                    JOptionPane.showMessageDialog(
+                        this,
+                        "Desktop OPEN action is not supported on this platform.",
+                        "Error",
+                        JOptionPane.ERROR_MESSAGE
+                    );
+                }
+            } else {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "Desktop is not supported on this platform.",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+                );
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(
+                this,
+                "Failed to open file: " + ex.getMessage(),
+                "Error",
+                JOptionPane.ERROR_MESSAGE
+            );
+        }
+    }
+
+    /**
+     * 在文件资源管理器中打开文件夹
+     */
+    private void openFolder(File folder) {
+        try {
+            if (Desktop.isDesktopSupported()) {
+                Desktop desktop = Desktop.getDesktop();
+                if (desktop.isSupported(Desktop.Action.OPEN)) {
+                    desktop.open(folder);
+                } else {
+                    JOptionPane.showMessageDialog(
+                        this,
+                        "Desktop OPEN action is not supported on this platform.",
+                        "Error",
+                        JOptionPane.ERROR_MESSAGE
+                    );
+                }
+            } else {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "Desktop is not supported on this platform.",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+                );
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(
+                this,
+                "Failed to open folder: " + ex.getMessage(),
+                "Error",
+                JOptionPane.ERROR_MESSAGE
+            );
+        }
     }
 
     /**

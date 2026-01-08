@@ -21,7 +21,7 @@ public class RepoDetailsDialog extends JDialog {
     private JTable commitsTable;
     private DefaultTableModel tableModel;
     private SimpleDateFormat dateFormat;
-    private JLabel remoteLabel;
+    private JTextField remoteLabel; // 改为JTextField以支持复制
     private JLabel branchLabel;
     private JTextArea filesTextArea;
     private File currentRepoDir;
@@ -53,34 +53,42 @@ public class RepoDetailsDialog extends JDialog {
         mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
         mainPanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
 
-        // Remote Path 面板
+        // Remote Path 面板 - 扁平设计
         JPanel remotePanel = new JPanel(new BorderLayout(10, 10));
-        remotePanel.setBorder(BorderFactory.createTitledBorder(
-                BorderFactory.createLineBorder(BORDER_COLOR, 1),
-                "Remote Repository",
-                javax.swing.border.TitledBorder.LEFT,
-                javax.swing.border.TitledBorder.TOP,
-                new Font("Segoe UI", Font.BOLD, 12)
+        remotePanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER_COLOR),
+                BorderFactory.createEmptyBorder(10, 10, 10, 10)
         ));
         remotePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
+        
+        JLabel remoteTitle = new JLabel("Remote Repository");
+        remoteTitle.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        remoteTitle.setForeground(new Color(95, 99, 104));
+        remotePanel.add(remoteTitle, BorderLayout.NORTH);
 
-        remoteLabel = new JLabel("No repository selected");
+        remoteLabel = new JTextField("No repository selected");
+        remoteLabel.setEditable(false); // 不可编辑，但可以选择和复制
         remoteLabel.setForeground(new Color(60, 64, 67));
+        remoteLabel.setBackground(Color.WHITE);
+        remoteLabel.setBorder(BorderFactory.createEmptyBorder()); // 移除边框，看起来像标签
+        remoteLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         remotePanel.add(remoteLabel, BorderLayout.CENTER);
 
         mainPanel.add(remotePanel);
         mainPanel.add(Box.createVerticalStrut(10));
 
-        // Current Branch 面板
+        // Current Branch 面板 - 扁平设计
         JPanel branchPanel = new JPanel(new BorderLayout(10, 10));
-        branchPanel.setBorder(BorderFactory.createTitledBorder(
-                BorderFactory.createLineBorder(BORDER_COLOR, 1),
-                "Current Branch",
-                javax.swing.border.TitledBorder.LEFT,
-                javax.swing.border.TitledBorder.TOP,
-                new Font("Segoe UI", Font.BOLD, 12)
+        branchPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER_COLOR),
+                BorderFactory.createEmptyBorder(10, 10, 10, 10)
         ));
         branchPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 60));
+        
+        JLabel branchTitle = new JLabel("Current Branch");
+        branchTitle.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        branchTitle.setForeground(new Color(95, 99, 104));
+        branchPanel.add(branchTitle, BorderLayout.NORTH);
 
         branchLabel = new JLabel("Loading...");
         branchLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
@@ -90,15 +98,18 @@ public class RepoDetailsDialog extends JDialog {
         mainPanel.add(branchPanel);
         mainPanel.add(Box.createVerticalStrut(10));
 
-        // 提交记录表格
+        // 提交记录表格 - 扁平设计
         JPanel tablePanel = new JPanel(new BorderLayout());
-        tablePanel.setBorder(BorderFactory.createTitledBorder(
+        tablePanel.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(BORDER_COLOR, 1),
-                "Recent Commits",
-                javax.swing.border.TitledBorder.LEFT,
-                javax.swing.border.TitledBorder.TOP,
-                new Font("Segoe UI", Font.BOLD, 12)
+                BorderFactory.createEmptyBorder(5, 5, 5, 5)
         ));
+        
+        // 添加标题
+        JLabel tableTitle = new JLabel("Recent Commits");
+        tableTitle.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        tableTitle.setForeground(new Color(95, 99, 104));
+        tableTitle.setBorder(BorderFactory.createEmptyBorder(5, 5, 10, 5));
 
         // 工具栏 - 包含Display Size、Message搜索和Author过滤
         JPanel toolbarPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
@@ -171,7 +182,11 @@ public class RepoDetailsDialog extends JDialog {
         toolbarPanel.add(Box.createHorizontalStrut(10));
         toolbarPanel.add(clearFiltersButton);
         
-        tablePanel.add(toolbarPanel, BorderLayout.NORTH);
+        // 组合标题和工具栏
+        JPanel topPanel = new JPanel(new BorderLayout());
+        topPanel.add(tableTitle, BorderLayout.NORTH);
+        topPanel.add(toolbarPanel, BorderLayout.CENTER);
+        tablePanel.add(topPanel, BorderLayout.NORTH);
 
         // 创建表格
         String[] columnNames = {"Commit Code", "Date", "Author", "Message"};
@@ -217,15 +232,18 @@ public class RepoDetailsDialog extends JDialog {
 
         mainPanel.add(tablePanel);
 
-        // 文件变更显示区域
+        // 文件变更显示区域 - 扁平设计
         JPanel filesPanel = new JPanel(new BorderLayout());
-        filesPanel.setBorder(BorderFactory.createTitledBorder(
+        filesPanel.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(BORDER_COLOR, 1),
-                "Changed Files",
-                javax.swing.border.TitledBorder.LEFT,
-                javax.swing.border.TitledBorder.TOP,
-                new Font("Segoe UI", Font.BOLD, 12)
+                BorderFactory.createEmptyBorder(5, 5, 5, 5)
         ));
+        
+        JLabel filesTitle = new JLabel("Changed Files");
+        filesTitle.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        filesTitle.setForeground(new Color(95, 99, 104));
+        filesTitle.setBorder(BorderFactory.createEmptyBorder(5, 5, 10, 5));
+        filesPanel.add(filesTitle, BorderLayout.NORTH);
 
         filesTextArea = new JTextArea();
         filesTextArea.setEditable(false);
@@ -404,15 +422,17 @@ public class RepoDetailsDialog extends JDialog {
                     if (data.repoInfo != null) {
                         // 显示 Remote Path
                         List<String> remotes = data.repoInfo.getRemoteUrls();
-                        StringBuilder remoteText = new StringBuilder("<html>");
+                        StringBuilder remoteText = new StringBuilder();
                         if (remotes != null && !remotes.isEmpty()) {
-                            for (String remote : remotes) {
-                                remoteText.append(remote).append("<br>");
+                            for (int i = 0; i < remotes.size(); i++) {
+                                remoteText.append(remotes.get(i));
+                                if (i < remotes.size() - 1) {
+                                    remoteText.append("; "); // 使用分号分隔多个remote
+                                }
                             }
                         } else {
                             remoteText.append("No remotes configured");
                         }
-                        remoteText.append("</html>");
                         remoteLabel.setText(remoteText.toString());
 
                         // 显示 Current Branch

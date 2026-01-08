@@ -208,7 +208,7 @@ public class BatchCherryPickDialog extends JDialog {
         outputTextArea = new JTextArea();
         outputTextArea.setEditable(false);
         outputTextArea.setFont(new Font("Consolas", Font.PLAIN, 11));
-        outputTextArea.setBackground(new Color(248, 249, 250));
+        outputTextArea.setBackground(Color.WHITE);
         outputTextArea.setMargin(new Insets(10, 10, 10, 10));
 
         JScrollPane scrollPane = new JScrollPane(outputTextArea);

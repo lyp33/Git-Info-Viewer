@@ -1,6 +1,7 @@
 package com.gitviewer;
 
 import javax.swing.*;
+import javax.swing.border.*;
 import java.awt.*;
 import java.io.File;
 
@@ -11,6 +12,11 @@ public class GitViewerApp extends JFrame {
 
     private DirectoryTreePanel directoryTreePanel;
     private InfoPanel infoPanel;
+    
+    // 现代化配色方案
+    private static final Color BACKGROUND_COLOR = new Color(250, 251, 252);
+    private static final Color ACCENT_COLOR = new Color(66, 133, 244);
+    private static final Color DIVIDER_COLOR = new Color(218, 220, 224);
 
     public GitViewerApp() {
         initializeUI();
@@ -19,30 +25,77 @@ public class GitViewerApp extends JFrame {
     private void initializeUI() {
         setTitle("Git Info Viewer");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(1200, 800);
+        setSize(1400, 900);
         setLocationRelativeTo(null);
+        
+        // 设置窗口图标
+        try {
+            // 尝试从resources目录加载图标
+            java.net.URL iconURL = getClass().getResource("/icon.png");
+            if (iconURL != null) {
+                ImageIcon icon = new ImageIcon(iconURL);
+                setIconImage(icon.getImage());
+            }
+        } catch (Exception e) {
+            // 如果加载失败，使用默认图标
+            System.err.println("Failed to load application icon: " + e.getMessage());
+        }
+        
+        // 设置窗口背景色
+        getContentPane().setBackground(BACKGROUND_COLOR);
 
-        // 创建主面板，使用分割面板
+        // 创建主面板
+        JPanel mainPanel = new JPanel(new BorderLayout());
+        mainPanel.setBackground(BACKGROUND_COLOR);
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
+
+        // 创建分割面板，使用现代化样式
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
-        splitPane.setDividerLocation(400);
-        splitPane.setResizeWeight(0.4);
+        splitPane.setDividerLocation(450);
+        splitPane.setResizeWeight(0.35);
+        splitPane.setDividerSize(5); // 恢复为5像素，方便拖动
+        splitPane.setBorder(null);
+        splitPane.setBackground(BACKGROUND_COLOR);
+        
+        // 自定义分割线颜色
+        splitPane.setUI(new javax.swing.plaf.basic.BasicSplitPaneUI() {
+            @Override
+            public javax.swing.plaf.basic.BasicSplitPaneDivider createDefaultDivider() {
+                return new javax.swing.plaf.basic.BasicSplitPaneDivider(this) {
+                    @Override
+                    public void paint(Graphics g) {
+                        g.setColor(DIVIDER_COLOR);
+                        g.fillRect(0, 0, getWidth(), getHeight());
+                    }
+                };
+            }
+        });
 
-        // 创建左侧目录树面板
+        // 创建左侧目录树面板 - 扁平边框
         directoryTreePanel = new DirectoryTreePanel();
+        directoryTreePanel.setBackground(Color.WHITE);
+        directoryTreePanel.setBorder(null); // 移除边框，使用扁平设计
+
+        // 创建右侧信息面板 - 扁平边框
+        infoPanel = new InfoPanel();
+        infoPanel.setBackground(BACKGROUND_COLOR);
+        infoPanel.setBorder(null); // 移除边框，使用扁平设计
+        
+        // 为左右面板添加监听器
         directoryTreePanel.addDirectorySelectionListener(selectedFile -> {
             // 当用户选择目录时，更新右侧信息面板
             infoPanel.displayInfo(selectedFile);
         });
 
-        // 创建右侧信息面板
-        infoPanel = new InfoPanel();
-
         // 设置分割面板的左右组件
         splitPane.setLeftComponent(directoryTreePanel);
         splitPane.setRightComponent(infoPanel);
 
+        // 添加到主面板
+        mainPanel.add(splitPane, BorderLayout.CENTER);
+        
         // 添加到主窗口
-        add(splitPane, BorderLayout.CENTER);
+        add(mainPanel, BorderLayout.CENTER);
 
         // 创建菜单栏
         createMenuBar();
@@ -50,12 +103,20 @@ public class GitViewerApp extends JFrame {
 
     private void createMenuBar() {
         JMenuBar menuBar = new JMenuBar();
+        menuBar.setBackground(Color.WHITE);
+        menuBar.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, DIVIDER_COLOR));
+        
+        // 设置菜单栏字体
+        Font menuFont = new Font("Segoe UI", Font.PLAIN, 13);
 
         // 文件菜单
         JMenu fileMenu = new JMenu("File");
+        fileMenu.setFont(menuFont);
+        styleMenu(fileMenu);
 
         // 选择根目录菜单项
         JMenuItem selectRootItem = new JMenuItem("Select Root Directory...");
+        selectRootItem.setFont(menuFont);
         selectRootItem.addActionListener(e -> selectRootDirectory());
         fileMenu.add(selectRootItem);
 
@@ -63,6 +124,7 @@ public class GitViewerApp extends JFrame {
 
         // 设置菜单项
         JMenuItem settingsItem = new JMenuItem("Settings...");
+        settingsItem.setFont(menuFont);
         settingsItem.addActionListener(e -> showSettingsDialog());
         fileMenu.add(settingsItem);
 
@@ -70,6 +132,7 @@ public class GitViewerApp extends JFrame {
 
         // GitLab认证设置菜单项
         JMenuItem gitLabSettingsItem = new JMenuItem("GitLab Authentication...");
+        gitLabSettingsItem.setFont(menuFont);
         gitLabSettingsItem.addActionListener(e -> showGitLabSettingsDialog());
         fileMenu.add(gitLabSettingsItem);
 
@@ -77,6 +140,7 @@ public class GitViewerApp extends JFrame {
 
         // 清除Git认证信息菜单项
         JMenuItem clearCredentialsItem = new JMenuItem("Clear Git Credentials");
+        clearCredentialsItem.setFont(menuFont);
         clearCredentialsItem.addActionListener(e -> clearGitCredentials());
         fileMenu.add(clearCredentialsItem);
 
@@ -84,6 +148,7 @@ public class GitViewerApp extends JFrame {
 
         // 退出菜单项
         JMenuItem exitItem = new JMenuItem("Exit");
+        exitItem.setFont(menuFont);
         exitItem.addActionListener(e -> System.exit(0));
         fileMenu.add(exitItem);
 
@@ -91,13 +156,26 @@ public class GitViewerApp extends JFrame {
 
         // 帮助菜单
         JMenu helpMenu = new JMenu("Help");
+        helpMenu.setFont(menuFont);
+        styleMenu(helpMenu);
+        
         JMenuItem aboutItem = new JMenuItem("About");
+        aboutItem.setFont(menuFont);
         aboutItem.addActionListener(e -> showAboutDialog());
         helpMenu.add(aboutItem);
 
         menuBar.add(helpMenu);
 
         setJMenuBar(menuBar);
+    }
+    
+    /**
+     * 美化菜单样式
+     */
+    private void styleMenu(JMenu menu) {
+        menu.setOpaque(true);
+        menu.setBackground(Color.WHITE);
+        menu.setForeground(new Color(60, 64, 67));
     }
 
     private void clearGitCredentials() {

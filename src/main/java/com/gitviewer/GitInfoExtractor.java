@@ -1,5 +1,6 @@
 package com.gitviewer;
 
+import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Constants;
@@ -287,6 +288,169 @@ public class GitInfoExtractor {
         } catch (IOException e) {
             System.err.println("Error reading git commits: " + e.getMessage());
             return commits;
+        }
+    }
+
+    /**
+     * 获取指定文件的提交历史
+     * @param repoDirectory Git仓库目录
+     * @param filePath 文件相对于仓库根目录的路径
+     * @param count 获取的提交数量
+     * @return 提交历史列表
+     */
+    public static List<GitCommitInfo> getFileCommitHistory(File repoDirectory, String filePath, int count) {
+        List<GitCommitInfo> commits = new ArrayList<>();
+
+        try {
+            FileRepositoryBuilder builder = new FileRepositoryBuilder();
+            Repository repository = builder
+                    .setGitDir(new File(repoDirectory, ".git"))
+                    .readEnvironment()
+                    .findGitDir()
+                    .build();
+
+            Git git = new Git(repository);
+            
+            // 使用 log 命令获取文件的提交历史
+            Iterable<RevCommit> logs = git.log()
+                    .addPath(filePath)
+                    .setMaxCount(count)
+                    .call();
+
+            for (RevCommit commit : logs) {
+                GitCommitInfo info = new GitCommitInfo();
+                info.setMessage(commit.getFullMessage());
+                info.setAuthor(commit.getAuthorIdent().getName());
+                info.setEmail(commit.getAuthorIdent().getEmailAddress());
+                info.setCommitTime(commit.getCommitTime() * 1000L);
+                info.setCommitId(commit.getName());
+                commits.add(info);
+            }
+
+            git.close();
+            repository.close();
+            return commits;
+
+        } catch (Exception e) {
+            System.err.println("Error reading file commit history: " + e.getMessage());
+            e.printStackTrace();
+            return commits;
+        }
+    }
+
+    /**
+     * 获取文件在指定提交中的内容
+     * @param repoDirectory Git仓库目录
+     * @param commitId 提交ID
+     * @param filePath 文件路径
+     * @return 文件内容
+     */
+    public static String getFileContentAtCommit(File repoDirectory, String commitId, String filePath) {
+        try {
+            FileRepositoryBuilder builder = new FileRepositoryBuilder();
+            Repository repository = builder
+                    .setGitDir(new File(repoDirectory, ".git"))
+                    .readEnvironment()
+                    .findGitDir()
+                    .build();
+
+            ObjectId commitObjectId = ObjectId.fromString(commitId);
+            RevWalk revWalk = new RevWalk(repository);
+            RevCommit commit = revWalk.parseCommit(commitObjectId);
+            
+            TreeWalk treeWalk = TreeWalk.forPath(repository, filePath, commit.getTree());
+            if (treeWalk != null) {
+                ObjectId blobId = treeWalk.getObjectId(0);
+                org.eclipse.jgit.lib.ObjectLoader loader = repository.open(blobId);
+                byte[] bytes = loader.getBytes();
+                
+                treeWalk.close();
+                revWalk.close();
+                repository.close();
+                
+                return new String(bytes, "UTF-8");
+            }
+            
+            revWalk.close();
+            repository.close();
+            return "";
+
+        } catch (Exception e) {
+            System.err.println("Error reading file content: " + e.getMessage());
+            return "";
+        }
+    }
+
+    /**
+     * 获取文件在两个提交之间的差异
+     * @param repoDirectory Git仓库目录
+     * @param oldCommitId 旧提交ID（可以为null，表示父提交）
+     * @param newCommitId 新提交ID
+     * @param filePath 文件路径
+     * @return 差异文本
+     */
+    public static String getFileDiff(File repoDirectory, String oldCommitId, String newCommitId, String filePath) {
+        try {
+            FileRepositoryBuilder builder = new FileRepositoryBuilder();
+            Repository repository = builder
+                    .setGitDir(new File(repoDirectory, ".git"))
+                    .readEnvironment()
+                    .findGitDir()
+                    .build();
+
+            RevWalk revWalk = new RevWalk(repository);
+            RevCommit newCommit = revWalk.parseCommit(ObjectId.fromString(newCommitId));
+            
+            RevCommit oldCommit = null;
+            if (oldCommitId != null && !oldCommitId.isEmpty()) {
+                oldCommit = revWalk.parseCommit(ObjectId.fromString(oldCommitId));
+            } else if (newCommit.getParentCount() > 0) {
+                // 如果没有指定旧提交，使用父提交
+                oldCommit = revWalk.parseCommit(newCommit.getParent(0));
+            }
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            DiffFormatter formatter = new DiffFormatter(out);
+            formatter.setRepository(repository);
+            formatter.setDiffComparator(RawTextComparator.DEFAULT);
+            formatter.setDetectRenames(true);
+
+            if (oldCommit != null) {
+                List<DiffEntry> diffs = formatter.scan(oldCommit.getTree(), newCommit.getTree());
+                
+                for (DiffEntry diff : diffs) {
+                    if (diff.getNewPath().equals(filePath) || diff.getOldPath().equals(filePath)) {
+                        formatter.format(diff);
+                    }
+                }
+            } else {
+                // 初始提交，显示整个文件
+                TreeWalk treeWalk = new TreeWalk(repository);
+                treeWalk.addTree(newCommit.getTree());
+                treeWalk.setRecursive(true);
+                treeWalk.setFilter(org.eclipse.jgit.treewalk.filter.PathFilter.create(filePath));
+                
+                if (treeWalk.next()) {
+                    out.write(("New file: " + filePath + "\n").getBytes());
+                    String content = getFileContentAtCommit(repoDirectory, newCommitId, filePath);
+                    String[] lines = content.split("\n");
+                    for (int i = 0; i < lines.length; i++) {
+                        out.write(("+" + lines[i] + "\n").getBytes());
+                    }
+                }
+                treeWalk.close();
+            }
+
+            formatter.close();
+            revWalk.close();
+            repository.close();
+
+            return out.toString("UTF-8");
+
+        } catch (Exception e) {
+            System.err.println("Error getting file diff: " + e.getMessage());
+            e.printStackTrace();
+            return "Error: " + e.getMessage();
         }
     }
 
