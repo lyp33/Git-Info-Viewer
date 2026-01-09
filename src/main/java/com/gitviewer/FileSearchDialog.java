@@ -20,6 +20,8 @@ public class FileSearchDialog extends JDialog {
     private File rootDirectory;
     private FileSelectionListener selectionListener;
     private List<File> allFiles;
+    private volatile boolean indexing = false;
+    private final Object filesLock = new Object();
 
     public FileSearchDialog(Frame parent, File rootDirectory) {
         super(parent, "Search Files", false); // 非模态对话框
@@ -135,16 +137,22 @@ public class FileSearchDialog extends JDialog {
             return;
         }
         
+        indexing = true;
+        searchField.setEnabled(false);
+        
         SwingWorker<Void, String> worker = new SwingWorker<Void, String>() {
             @Override
             protected Void doInBackground() throws Exception {
-                allFiles.clear();
-                scanDirectory(rootDirectory);
+                synchronized (filesLock) {
+                    allFiles.clear();
+                    scanDirectory(rootDirectory);
+                }
                 return null;
             }
 
             @Override
             protected void done() {
+                indexing = false;
                 JLabel statusLabel = (JLabel) ((JPanel) getContentPane().getComponent(2)).getComponent(0);
                 statusLabel.setText(allFiles.size() + " files indexed. Type to search...");
                 searchField.setEnabled(true);
@@ -182,6 +190,16 @@ public class FileSearchDialog extends JDialog {
      * 执行搜索
      */
     private void performSearch() {
+        if (indexing) {
+            JOptionPane.showMessageDialog(
+                this,
+                "Please wait, files are still being indexed...",
+                "Indexing in Progress",
+                JOptionPane.INFORMATION_MESSAGE
+            );
+            return;
+        }
+        
         String searchText = searchField.getText().trim().toLowerCase();
         
         // 清空表格
@@ -194,16 +212,18 @@ public class FileSearchDialog extends JDialog {
         
         // 搜索匹配的文件
         int count = 0;
-        for (File file : allFiles) {
-            String fileName = file.getName().toLowerCase();
-            if (fileName.contains(searchText)) {
-                String relativePath = getRelativePath(rootDirectory, file);
-                tableModel.addRow(new Object[]{file.getName(), relativePath});
-                count++;
-                
-                // 限制结果数量，避免性能问题
-                if (count >= 1000) {
-                    break;
+        synchronized (filesLock) {
+            for (File file : allFiles) {
+                String fileName = file.getName().toLowerCase();
+                if (fileName.contains(searchText)) {
+                    String relativePath = getRelativePath(rootDirectory, file);
+                    tableModel.addRow(new Object[]{file.getName(), relativePath});
+                    count++;
+                    
+                    // 限制结果数量，避免性能问题
+                    if (count >= 1000) {
+                        break;
+                    }
                 }
             }
         }
