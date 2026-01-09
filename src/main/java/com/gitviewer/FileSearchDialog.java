@@ -54,25 +54,20 @@ public class FileSearchDialog extends JDialog {
         ));
         searchField.addActionListener(e -> performSearch());
         
-        // 添加实时搜索
-        searchField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            @Override
-            public void insertUpdate(javax.swing.event.DocumentEvent e) {
-                performSearch();
-            }
-
-            @Override
-            public void removeUpdate(javax.swing.event.DocumentEvent e) {
-                performSearch();
-            }
-
-            @Override
-            public void changedUpdate(javax.swing.event.DocumentEvent e) {
-                performSearch();
-            }
-        });
-        
         searchPanel.add(searchField, BorderLayout.CENTER);
+        
+        // 添加搜索按钮
+        JButton searchButton = new JButton("Search");
+        searchButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        searchButton.setBackground(new Color(66, 133, 244));
+        searchButton.setForeground(Color.WHITE);
+        searchButton.setFocusPainted(false);
+        searchButton.setBorderPainted(false);
+        searchButton.setOpaque(true);
+        searchButton.setPreferredSize(new Dimension(80, 32));
+        searchButton.addActionListener(e -> performSearch());
+        
+        searchPanel.add(searchButton, BorderLayout.EAST);
         
         add(searchPanel, BorderLayout.NORTH);
         

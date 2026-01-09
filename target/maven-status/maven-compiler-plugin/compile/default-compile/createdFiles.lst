@@ -68,7 +68,6 @@ com\gitviewer\CheckoutGitProjectDialog$3.class
 com\gitviewer\InfoPanel$BranchCellEditor$1.class
 com\gitviewer\InfoPanel$6.class
 com\gitviewer\FileSearchDialog$1.class
-com\gitviewer\FileSearchDialog$4.class
 com\gitviewer\FileSearchDialog.class
 com\gitviewer\FileDiffDialog$LineType.class
 com\gitviewer\RepoDetailsDialog$3.class
