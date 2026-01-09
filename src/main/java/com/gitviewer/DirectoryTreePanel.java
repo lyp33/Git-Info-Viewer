@@ -6,6 +6,8 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 左侧目录树面板
@@ -264,6 +266,13 @@ public class DirectoryTreePanel extends JPanel {
         if (selectionListener != null) {
             selectionListener.onDirectorySelected(targetDir);
         }
+    }
+
+    /**
+     * 获取根目录
+     */
+    public File getRootDirectory() {
+        return rootDirectory;
     }
 
     /**
@@ -708,5 +717,79 @@ public class DirectoryTreePanel extends JPanel {
     @FunctionalInterface
     public interface TreeRefreshListener {
         void onTreeRefreshed();
+    }
+
+    /**
+     * 在树中选中并展开到指定文件
+     */
+    public void selectAndRevealFile(File targetFile) {
+        if (targetFile == null || !targetFile.exists()) {
+            return;
+        }
+
+        // 构建从根目录到目标文件的路径
+        List<File> pathToFile = new ArrayList<>();
+        File current = targetFile;
+        
+        while (current != null && !current.equals(rootDirectory)) {
+            pathToFile.add(0, current);
+            current = current.getParentFile();
+        }
+        
+        if (current == null) {
+            // 目标文件不在根目录下
+            return;
+        }
+        
+        // 从根节点开始，逐级展开并查找
+        DefaultMutableTreeNode currentNode = (DefaultMutableTreeNode) treeModel.getRoot();
+        TreePath currentPath = new TreePath(currentNode);
+        
+        for (File fileInPath : pathToFile) {
+            // 确保当前节点已加载子节点
+            if (currentNode.getChildCount() == 1) {
+                DefaultMutableTreeNode firstChild = (DefaultMutableTreeNode) currentNode.getChildAt(0);
+                if ("Loading...".equals(firstChild.getUserObject())) {
+                    // 移除占位节点并加载实际子节点
+                    treeModel.removeNodeFromParent(firstChild);
+                    Object userObject = currentNode.getUserObject();
+                    if (userObject instanceof File) {
+                        loadChildren(currentNode, (File) userObject);
+                    }
+                }
+            }
+            
+            // 在子节点中查找匹配的文件
+            boolean found = false;
+            for (int i = 0; i < currentNode.getChildCount(); i++) {
+                DefaultMutableTreeNode childNode = (DefaultMutableTreeNode) currentNode.getChildAt(i);
+                Object userObject = childNode.getUserObject();
+                
+                if (userObject instanceof File) {
+                    File childFile = (File) userObject;
+                    if (childFile.equals(fileInPath)) {
+                        currentNode = childNode;
+                        currentPath = currentPath.pathByAddingChild(childNode);
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (!found) {
+                // 无法找到路径中的某个节点
+                return;
+            }
+        }
+        
+        // 展开并选中目标节点
+        tree.expandPath(currentPath);
+        tree.setSelectionPath(currentPath);
+        tree.scrollPathToVisible(currentPath);
+        
+        // 触发选择事件
+        if (selectionListener != null) {
+            selectionListener.onDirectorySelected(targetFile);
+        }
     }
 }

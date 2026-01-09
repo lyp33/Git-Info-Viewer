@@ -1,6 +1,7 @@
 D:\ai\project\git\src\main\java\com\gitviewer\GitInfoExtractor.java
 D:\ai\project\git\src\main\java\com\gitviewer\GitLabSettingsDialog.java
 D:\ai\project\git\src\main\java\com\gitviewer\RepoDetailsDialog.java
+D:\ai\project\git\src\main\java\com\gitviewer\FileDiffDialog.java
 D:\ai\project\git\src\main\java\com\gitviewer\SettingsDialog.java
 D:\ai\project\git\src\main\java\com\gitviewer\GitLabProject.java
 D:\ai\project\git\src\main\java\com\gitviewer\AppSettings.java
@@ -13,4 +14,5 @@ D:\ai\project\git\src\main\java\com\gitviewer\BatchCherryPickResultDialog.java
 D:\ai\project\git\src\main\java\com\gitviewer\BatchCherryPickDialog.java
 D:\ai\project\git\src\main\java\com\gitviewer\DirectoryTreePanel.java
 D:\ai\project\git\src\main\java\com\gitviewer\GitCredentialsDialog.java
+D:\ai\project\git\src\main\java\com\gitviewer\FileSearchDialog.java
 D:\ai\project\git\src\main\java\com\gitviewer\CherryPickDialog.java

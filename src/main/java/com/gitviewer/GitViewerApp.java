@@ -154,6 +154,19 @@ public class GitViewerApp extends JFrame {
 
         menuBar.add(fileMenu);
 
+        // 搜索菜单
+        JMenu searchMenu = new JMenu("Search");
+        searchMenu.setFont(menuFont);
+        styleMenu(searchMenu);
+        
+        JMenuItem searchFilesItem = new JMenuItem("Search Files...");
+        searchFilesItem.setFont(menuFont);
+        searchFilesItem.setAccelerator(KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_F, java.awt.event.InputEvent.CTRL_DOWN_MASK));
+        searchFilesItem.addActionListener(e -> showSearchDialog());
+        searchMenu.add(searchFilesItem);
+        
+        menuBar.add(searchMenu);
+
         // 帮助菜单
         JMenu helpMenu = new JMenu("Help");
         helpMenu.setFont(menuFont);
@@ -244,6 +257,31 @@ public class GitViewerApp extends JFrame {
                 "A tool to view git repository information\n" +
                 "including remotes, branches, and commit history.";
         JOptionPane.showMessageDialog(this, message, "About", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    /**
+     * 显示搜索对话框
+     */
+    private void showSearchDialog() {
+        File rootDir = directoryTreePanel.getRootDirectory();
+        if (rootDir == null) {
+            JOptionPane.showMessageDialog(
+                this,
+                "Please select a root directory first.\n(File -> Select Root Directory...)",
+                "No Directory Selected",
+                JOptionPane.INFORMATION_MESSAGE
+            );
+            return;
+        }
+        
+        FileSearchDialog searchDialog = new FileSearchDialog(this, rootDir);
+        searchDialog.setFileSelectionListener(file -> {
+            // 在左侧树中定位并选中文件
+            directoryTreePanel.selectAndRevealFile(file);
+            // 在右侧面板显示文件信息
+            infoPanel.displayInfo(file);
+        });
+        searchDialog.setVisible(true);
     }
 
     public static void main(String[] args) {
