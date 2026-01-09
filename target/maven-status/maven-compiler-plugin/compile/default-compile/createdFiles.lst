@@ -81,8 +81,8 @@ com\gitviewer\BatchCherryPickResultDialog.class
 com\gitviewer\CheckoutGitProjectDialog$CheckBoxCellEditor.class
 com\gitviewer\CheckoutGitProjectDialog$6.class
 com\gitviewer\InfoPanel$8.class
-com\gitviewer\BatchCherryPickDialog$1.class
 com\gitviewer\FileSearchDialog$FileSelectionListener.class
+com\gitviewer\BatchCherryPickDialog$1.class
 com\gitviewer\AppSettings.class
 com\gitviewer\BatchCherryPickDialog.class
 com\gitviewer\RepoDetailsDialog$RepoData.class

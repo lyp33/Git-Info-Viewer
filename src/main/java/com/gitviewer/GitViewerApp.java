@@ -12,6 +12,7 @@ public class GitViewerApp extends JFrame {
 
     private DirectoryTreePanel directoryTreePanel;
     private InfoPanel infoPanel;
+    private FileSearchDialog searchDialog;
     
     // 现代化配色方案
     private static final Color BACKGROUND_COLOR = new Color(250, 251, 252);
@@ -274,14 +275,23 @@ public class GitViewerApp extends JFrame {
             return;
         }
         
-        FileSearchDialog searchDialog = new FileSearchDialog(this, rootDir);
-        searchDialog.setFileSelectionListener(file -> {
-            // 在左侧树中定位并选中文件
-            directoryTreePanel.selectAndRevealFile(file);
-            // 在右侧面板显示文件信息
-            infoPanel.displayInfo(file);
-        });
-        searchDialog.setVisible(true);
+        // 如果搜索对话框不存在或已关闭，创建新的
+        if (searchDialog == null || !searchDialog.isVisible()) {
+            searchDialog = new FileSearchDialog(this, rootDir);
+            searchDialog.setFileSelectionListener(file -> {
+                // 在左侧树中定位并选中文件
+                directoryTreePanel.selectAndRevealFile(file);
+                // 在右侧面板显示文件信息
+                infoPanel.displayInfo(file);
+                // 关闭搜索对话框
+                searchDialog.dispose();
+            });
+            searchDialog.setVisible(true);
+        } else {
+            // 如果对话框已存在，只是将其置于前台
+            searchDialog.toFront();
+            searchDialog.requestFocus();
+        }
     }
 
     public static void main(String[] args) {

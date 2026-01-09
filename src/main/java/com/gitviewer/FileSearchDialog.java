@@ -22,6 +22,9 @@ public class FileSearchDialog extends JDialog {
     private List<File> allFiles;
     private volatile boolean indexing = false;
     private final Object filesLock = new Object();
+    
+    // 静态缓存，用于存储已索引的文件
+    private static final java.util.Map<String, List<File>> fileCache = new java.util.HashMap<>();
 
     public FileSearchDialog(Frame parent, File rootDirectory) {
         super(parent, "Search Files", false); // 非模态对话框
@@ -31,8 +34,8 @@ public class FileSearchDialog extends JDialog {
         initializeUI();
         setLocationRelativeTo(parent);
         
-        // 开始索引文件
-        indexFiles();
+        // 检查缓存，如果有则使用缓存，否则开始索引
+        loadOrIndexFiles();
     }
 
     private void initializeUI() {
@@ -74,7 +77,7 @@ public class FileSearchDialog extends JDialog {
         add(searchPanel, BorderLayout.NORTH);
         
         // 中间结果表格
-        String[] columnNames = {"File Name", "Path"};
+        String[] columnNames = {"File Name", "Absolute Path"};
         tableModel = new DefaultTableModel(columnNames, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -130,6 +133,35 @@ public class FileSearchDialog extends JDialog {
     }
 
     /**
+     * 加载或索引文件
+     */
+    private void loadOrIndexFiles() {
+        if (rootDirectory == null || !rootDirectory.exists()) {
+            return;
+        }
+        
+        String cacheKey = rootDirectory.getAbsolutePath();
+        
+        // 检查缓存
+        synchronized (fileCache) {
+            if (fileCache.containsKey(cacheKey)) {
+                // 使用缓存
+                synchronized (filesLock) {
+                    allFiles = new ArrayList<>(fileCache.get(cacheKey));
+                }
+                JLabel statusLabel = (JLabel) ((JPanel) getContentPane().getComponent(2)).getComponent(0);
+                statusLabel.setText(allFiles.size() + " files indexed (from cache). Type to search...");
+                searchField.setEnabled(true);
+                searchField.requestFocus();
+                return;
+            }
+        }
+        
+        // 缓存中没有，开始索引
+        indexFiles();
+    }
+
+    /**
      * 索引所有文件
      */
     private void indexFiles() {
@@ -140,12 +172,19 @@ public class FileSearchDialog extends JDialog {
         indexing = true;
         searchField.setEnabled(false);
         
+        String cacheKey = rootDirectory.getAbsolutePath();
+        
         SwingWorker<Void, String> worker = new SwingWorker<Void, String>() {
             @Override
             protected Void doInBackground() throws Exception {
                 synchronized (filesLock) {
                     allFiles.clear();
                     scanDirectory(rootDirectory);
+                    
+                    // 保存到缓存
+                    synchronized (fileCache) {
+                        fileCache.put(cacheKey, new ArrayList<>(allFiles));
+                    }
                 }
                 return null;
             }
@@ -216,8 +255,8 @@ public class FileSearchDialog extends JDialog {
             for (File file : allFiles) {
                 String fileName = file.getName().toLowerCase();
                 if (fileName.contains(searchText)) {
-                    String relativePath = getRelativePath(rootDirectory, file);
-                    tableModel.addRow(new Object[]{file.getName(), relativePath});
+                    String absolutePath = file.getAbsolutePath();
+                    tableModel.addRow(new Object[]{file.getName(), absolutePath});
                     count++;
                     
                     // 限制结果数量，避免性能问题
@@ -229,23 +268,6 @@ public class FileSearchDialog extends JDialog {
         }
         
         updateStatusLabel(count);
-    }
-
-    /**
-     * 获取相对路径
-     */
-    private String getRelativePath(File base, File file) {
-        try {
-            String basePath = base.getCanonicalPath();
-            String filePath = file.getCanonicalPath();
-            
-            if (filePath.startsWith(basePath)) {
-                return filePath.substring(basePath.length() + 1);
-            }
-            return filePath;
-        } catch (Exception e) {
-            return file.getAbsolutePath();
-        }
     }
 
     /**
@@ -266,12 +288,12 @@ public class FileSearchDialog extends JDialog {
      * 打开选中的文件
      */
     private void openSelectedFile(int row) {
-        String relativePath = (String) tableModel.getValueAt(row, 1);
-        File selectedFile = new File(rootDirectory, relativePath);
+        String absolutePath = (String) tableModel.getValueAt(row, 1);
+        File selectedFile = new File(absolutePath);
         
         if (selectedFile.exists() && selectionListener != null) {
             selectionListener.onFileSelected(selectedFile);
-            // 不关闭对话框，允许继续搜索
+            // 注意：关闭对话框的操作由监听器处理（在 GitViewerApp 中）
         }
     }
 
