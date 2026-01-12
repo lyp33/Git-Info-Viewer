@@ -210,12 +210,14 @@ public class DirectoryTreePanel extends JPanel {
         scrollPane.getViewport().setBackground(Color.WHITE);
         add(scrollPane, BorderLayout.CENTER);
 
-        // 添加底部路径输入框 - 现代化样式
-        JPanel bottomPanel = new JPanel(new BorderLayout(8, 0));
+        // 添加底部路径输入框和历史记录 - 现代化样式
+        JPanel bottomPanel = new JPanel(new BorderLayout(0, 5));
         bottomPanel.setBackground(new Color(255, 255, 255));
         bottomPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 0, 10)); // 左右各10像素边距
 
-        // 移除了文件夹图标
+        // 路径输入框面板
+        JPanel pathPanel = new JPanel(new BorderLayout(8, 0));
+        pathPanel.setBackground(new Color(255, 255, 255));
 
         pathTextField = new JTextField();
         pathTextField.setFont(new Font("Segoe UI", Font.PLAIN, 12));
@@ -228,9 +230,138 @@ public class DirectoryTreePanel extends JPanel {
         pathTextField.setToolTipText("Enter directory path and press Enter to navigate");
         // 添加回车键监听
         pathTextField.addActionListener(e -> navigateToPath());
-        bottomPanel.add(pathTextField, BorderLayout.CENTER);
+        pathPanel.add(pathTextField, BorderLayout.CENTER);
+
+        bottomPanel.add(pathPanel, BorderLayout.NORTH);
+
+        // 历史记录列表
+        JPanel historyPanel = createHistoryPanel();
+        bottomPanel.add(historyPanel, BorderLayout.CENTER);
 
         add(bottomPanel, BorderLayout.SOUTH);
+    }
+
+    /**
+     * 创建历史记录面板
+     */
+    private JPanel createHistoryPanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBackground(new Color(255, 255, 255));
+        panel.setBorder(BorderFactory.createEmptyBorder(5, 0, 0, 0));
+
+        // 获取历史记录
+        List<String> history = AppSettings.getInstance().getDirectoryHistory();
+
+        if (history.isEmpty()) {
+            // 如果没有历史记录，显示提示文本
+            JLabel emptyLabel = new JLabel("No recent directories");
+            emptyLabel.setFont(new Font("Segoe UI", Font.ITALIC, 11));
+            emptyLabel.setForeground(new Color(150, 150, 150));
+            emptyLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            panel.add(emptyLabel);
+        } else {
+            // 显示历史记录
+            for (String path : history) {
+                JLabel historyLabel = new JLabel(path);
+                historyLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+                historyLabel.setForeground(new Color(26, 115, 232)); // 蓝色链接样式
+                historyLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                historyLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+                historyLabel.setToolTipText("Double-click to load: " + path);
+
+                // 添加鼠标悬停效果
+                historyLabel.addMouseListener(new MouseAdapter() {
+                    @Override
+                    public void mouseEntered(MouseEvent e) {
+                        historyLabel.setForeground(new Color(66, 133, 244)); // 更亮的蓝色
+                    }
+
+                    @Override
+                    public void mouseExited(MouseEvent e) {
+                        historyLabel.setForeground(new Color(26, 115, 232));
+                    }
+
+                    @Override
+                    public void mouseClicked(MouseEvent e) {
+                        if (e.getClickCount() == 2) {
+                            // 双击加载目录
+                            loadDirectoryFromHistory(path);
+                        }
+                    }
+                });
+
+                panel.add(historyLabel);
+                panel.add(Box.createVerticalStrut(3)); // 添加间距
+            }
+        }
+
+        return panel;
+    }
+
+    /**
+     * 从历史记录加载目录
+     */
+    private void loadDirectoryFromHistory(String path) {
+        File targetDir = new File(path);
+        
+        if (!targetDir.exists()) {
+            JOptionPane.showMessageDialog(this,
+                "Directory no longer exists: " + path,
+                "Error",
+                JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        if (!targetDir.isDirectory()) {
+            JOptionPane.showMessageDialog(this,
+                "Path is not a directory: " + path,
+                "Error",
+                JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // 设置为新的根目录
+        setRootDirectory(targetDir);
+
+        // 触发选择事件，更新右侧面板
+        if (selectionListener != null) {
+            selectionListener.onDirectorySelected(targetDir);
+        }
+    }
+
+    /**
+     * 刷新历史记录显示
+     */
+    private void refreshHistoryPanel() {
+        // 找到底部面板
+        Component[] components = getComponents();
+        for (Component comp : components) {
+            if (comp instanceof JPanel) {
+                JPanel panel = (JPanel) comp;
+                // 检查是否是底部面板（包含路径输入框）
+                Component[] children = panel.getComponents();
+                for (Component child : children) {
+                    if (child instanceof JPanel) {
+                        JPanel childPanel = (JPanel) child;
+                        Component[] grandChildren = childPanel.getComponents();
+                        for (Component grandChild : grandChildren) {
+                            if (grandChild == pathTextField) {
+                                // 找到了底部面板，重新创建历史记录面板
+                                if (children.length > 1 && children[1] instanceof JPanel) {
+                                    panel.remove(children[1]); // 移除旧的历史记录面板
+                                }
+                                JPanel newHistoryPanel = createHistoryPanel();
+                                panel.add(newHistoryPanel, BorderLayout.CENTER);
+                                panel.revalidate();
+                                panel.repaint();
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -285,6 +416,12 @@ public class DirectoryTreePanel extends JPanel {
         if (pathTextField != null) {
             pathTextField.setText(directory.getAbsolutePath());
         }
+
+        // 添加到历史记录
+        AppSettings.getInstance().addDirectoryToHistory(directory.getAbsolutePath());
+        
+        // 刷新历史记录显示
+        refreshHistoryPanel();
 
         // 清空并重新构建树
         DefaultMutableTreeNode root = new DefaultMutableTreeNode(directory);

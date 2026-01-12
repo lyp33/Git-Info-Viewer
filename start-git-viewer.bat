@@ -22,14 +22,13 @@ if not exist "git-info-viewer-1.0.0-jar-with-dependencies.jar" (
     exit /b 1
 )
 
-REM 启动应用程序
-echo Starting application...
-java -jar git-info-viewer-1.0.0-jar-with-dependencies.jar
+REM 启动应用程序（后台运行）
+echo Starting application in background...
+start "" javaw -jar git-info-viewer-1.0.0-jar-with-dependencies.jar
 
-REM 如果应用程序异常退出，显示错误信息
-if %errorlevel% neq 0 (
-    echo.
-    echo Application exited with error code: %errorlevel%
-    echo.
-    pause
-)
+echo.
+echo Application started successfully!
+echo The Git Info Viewer window should appear shortly.
+echo You can close this command window now.
+echo.
+timeout /t 3 >nul

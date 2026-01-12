@@ -22,6 +22,10 @@ public class AppSettings {
     private String gitLabUsername;
     private String gitLabPassword;
 
+    // 目录历史记录（最多保存5条）
+    private List<String> directoryHistory;
+    private static final int MAX_HISTORY_SIZE = 5;
+
     // 默认字体
     private static final Font DEFAULT_LEFT_FONT = new Font("Arial", Font.PLAIN, 12);
     private static final Font DEFAULT_RIGHT_FONT = new Font("Segoe UI", Font.PLAIN, 12);
@@ -38,6 +42,7 @@ public class AppSettings {
     }
 
     private AppSettings() {
+        directoryHistory = new ArrayList<>();
         loadSettings();
     }
 
@@ -90,6 +95,15 @@ public class AppSettings {
                 gitLabUsername = props.getProperty("gitlab.username", "");
                 gitLabPassword = props.getProperty("gitlab.password", "");
 
+                // 加载目录历史记录
+                directoryHistory.clear();
+                for (int i = 0; i < MAX_HISTORY_SIZE; i++) {
+                    String historyPath = props.getProperty("directory.history." + i, "");
+                    if (!historyPath.isEmpty()) {
+                        directoryHistory.add(historyPath);
+                    }
+                }
+
             } catch (IOException e) {
                 System.err.println("Error loading settings: " + e.getMessage());
                 setDefaultFonts();
@@ -126,6 +140,11 @@ public class AppSettings {
             }
             if (gitLabPassword != null && !gitLabPassword.isEmpty()) {
                 props.setProperty("gitlab.password", gitLabPassword);
+            }
+
+            // 保存目录历史记录
+            for (int i = 0; i < directoryHistory.size(); i++) {
+                props.setProperty("directory.history." + i, directoryHistory.get(i));
             }
 
             props.store(fos, "Git Info Viewer Settings");
@@ -179,5 +198,43 @@ public class AppSettings {
 
     public void setGitLabPassword(String password) {
         this.gitLabPassword = password;
+    }
+
+    // 目录历史记录的 getter 和 setter
+    public List<String> getDirectoryHistory() {
+        return new ArrayList<>(directoryHistory);
+    }
+
+    /**
+     * 添加目录到历史记录
+     * 如果目录已存在，将其移到最前面
+     * 保持最多5条记录
+     */
+    public void addDirectoryToHistory(String directoryPath) {
+        if (directoryPath == null || directoryPath.trim().isEmpty()) {
+            return;
+        }
+
+        // 移除已存在的相同路径
+        directoryHistory.remove(directoryPath);
+
+        // 添加到列表开头
+        directoryHistory.add(0, directoryPath);
+
+        // 保持最多5条记录
+        while (directoryHistory.size() > MAX_HISTORY_SIZE) {
+            directoryHistory.remove(directoryHistory.size() - 1);
+        }
+
+        // 保存设置
+        saveSettings();
+    }
+
+    /**
+     * 清除目录历史记录
+     */
+    public void clearDirectoryHistory() {
+        directoryHistory.clear();
+        saveSettings();
     }
 }
