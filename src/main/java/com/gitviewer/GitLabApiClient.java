@@ -682,4 +682,55 @@ public class GitLabApiClient {
             System.out.println("[GitLab API] Connection closed");
         }
     }
+
+    /**
+     * 执行 GitLab API GET 请求（简化版本，用于 AI Chat）
+     * 
+     * @param url 完整的 API URL（包含 base URL）
+     * @param token GitLab Private Token
+     * @return 响应 JSON 字符串
+     * @throws IOException 网络错误
+     */
+    public static String executeGet(String url, String token) throws IOException {
+        System.out.println("[GitLab API] GET Request: " + url);
+        
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        
+        try {
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(15000);
+            conn.setReadTimeout(30000);
+            
+            // GitLab Private Token 认证
+            if (token != null && !token.isEmpty()) {
+                conn.setRequestProperty("PRIVATE-TOKEN", token);
+            }
+            
+            int responseCode = conn.getResponseCode();
+            System.out.println("[GitLab API] Response Code: " + responseCode);
+            
+            if (responseCode == 401) {
+                throw new IOException("GitLab authentication failed. Please check your token.");
+            } else if (responseCode == 403) {
+                throw new IOException("GitLab API access forbidden.");
+            } else if (responseCode == 404) {
+                throw new IOException("GitLab resource not found.");
+            } else if (responseCode != 200) {
+                throw new IOException("GitLab API error: " + responseCode);
+            }
+            
+            // 读取响应
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                StringBuilder response = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    response.append(line);
+                }
+                return response.toString();
+            }
+        } finally {
+            conn.disconnect();
+        }
+    }
 }

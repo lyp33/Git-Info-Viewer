@@ -168,6 +168,26 @@ public class GitViewerApp extends JFrame {
         
         menuBar.add(searchMenu);
 
+        // Chat 菜单
+        JMenu chatMenu = new JMenu("Chat");
+        chatMenu.setFont(menuFont);
+        styleMenu(chatMenu);
+        
+        JMenuItem openChatItem = new JMenuItem("Open AI Chat...");
+        openChatItem.setFont(menuFont);
+        openChatItem.setAccelerator(KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_T, java.awt.event.InputEvent.CTRL_DOWN_MASK));
+        openChatItem.addActionListener(e -> showChatDialog());
+        chatMenu.add(openChatItem);
+        
+        chatMenu.addSeparator();
+        
+        JMenuItem aiSettingsItem = new JMenuItem("AI Settings...");
+        aiSettingsItem.setFont(menuFont);
+        aiSettingsItem.addActionListener(e -> showAISettingsDialog());
+        chatMenu.add(aiSettingsItem);
+        
+        menuBar.add(chatMenu);
+
         // 帮助菜单
         JMenu helpMenu = new JMenu("Help");
         helpMenu.setFont(menuFont);
@@ -292,6 +312,24 @@ public class GitViewerApp extends JFrame {
             searchDialog.toFront();
             searchDialog.requestFocus();
         }
+    }
+
+    /**
+     * 显示 AI 聊天对话框
+     */
+    private void showChatDialog() {
+        // 获取当前选中的目录
+        File selectedDir = directoryTreePanel.getSelectedDirectory();
+        AIChatDialog dialog = new AIChatDialog(this, selectedDir);
+        dialog.setVisible(true);
+    }
+
+    /**
+     * 显示 AI 设置对话框
+     */
+    private void showAISettingsDialog() {
+        AISettingsDialog dialog = new AISettingsDialog(this);
+        dialog.setVisible(true);
     }
 
     public static void main(String[] args) {

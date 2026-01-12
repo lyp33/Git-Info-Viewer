@@ -22,6 +22,14 @@ public class AppSettings {
     private String gitLabUsername;
     private String gitLabPassword;
 
+    // GitHub 配置
+    private String githubToken;
+
+    // AI Chat 配置
+    private String aiApiUrl;
+    private String aiApiKey;
+    private String aiModel;
+
     // 目录历史记录（最多保存5条）
     private List<String> directoryHistory;
     private static final int MAX_HISTORY_SIZE = 5;
@@ -95,6 +103,14 @@ public class AppSettings {
                 gitLabUsername = props.getProperty("gitlab.username", "");
                 gitLabPassword = props.getProperty("gitlab.password", "");
 
+                // 加载GitHub配置
+                githubToken = props.getProperty("github.token", "");
+
+                // 加载AI Chat配置
+                aiApiUrl = props.getProperty("ai.api.url", "");
+                aiApiKey = props.getProperty("ai.api.key", "");
+                aiModel = props.getProperty("ai.model", "gpt-3.5-turbo");
+
                 // 加载目录历史记录
                 directoryHistory.clear();
                 for (int i = 0; i < MAX_HISTORY_SIZE; i++) {
@@ -140,6 +156,22 @@ public class AppSettings {
             }
             if (gitLabPassword != null && !gitLabPassword.isEmpty()) {
                 props.setProperty("gitlab.password", gitLabPassword);
+            }
+
+            // 保存GitHub配置
+            if (githubToken != null && !githubToken.isEmpty()) {
+                props.setProperty("github.token", githubToken);
+            }
+
+            // 保存AI Chat配置
+            if (aiApiUrl != null && !aiApiUrl.isEmpty()) {
+                props.setProperty("ai.api.url", aiApiUrl);
+            }
+            if (aiApiKey != null && !aiApiKey.isEmpty()) {
+                props.setProperty("ai.api.key", aiApiKey);
+            }
+            if (aiModel != null && !aiModel.isEmpty()) {
+                props.setProperty("ai.model", aiModel);
             }
 
             // 保存目录历史记录
@@ -236,5 +268,39 @@ public class AppSettings {
     public void clearDirectoryHistory() {
         directoryHistory.clear();
         saveSettings();
+    }
+
+    // GitHub 配置的 getter 和 setter
+    public String getGithubToken() {
+        return githubToken != null ? githubToken : "";
+    }
+
+    public void setGithubToken(String token) {
+        this.githubToken = token;
+    }
+
+    // AI Chat 配置的 getter 和 setter
+    public String getAiApiUrl() {
+        return aiApiUrl != null ? aiApiUrl : "";
+    }
+
+    public void setAiApiUrl(String url) {
+        this.aiApiUrl = url;
+    }
+
+    public String getAiApiKey() {
+        return aiApiKey != null ? aiApiKey : "";
+    }
+
+    public void setAiApiKey(String key) {
+        this.aiApiKey = key;
+    }
+
+    public String getAiModel() {
+        return aiModel != null ? aiModel : "gpt-3.5-turbo";
+    }
+
+    public void setAiModel(String model) {
+        this.aiModel = model;
     }
 }

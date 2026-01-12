@@ -39,22 +39,12 @@ if not exist "git-info-viewer-1.0.0-jar-with-dependencies.jar" (
 REM 启动应用程序
 echo [3/3] 启动Git Info Viewer...
 echo.
-echo 🚀 正在启动应用程序，请稍候...
-echo    (首次启动可能需要几秒钟时间)
+echo 🚀 正在后台启动应用程序...
+echo    应用程序将在后台运行，此窗口将自动关闭
 echo.
 
-java -Dfile.encoding=UTF-8 -jar git-info-viewer-1.0.0-jar-with-dependencies.jar
+REM 使用 start 命令后台启动 javaw（无窗口）
+start "" javaw -Dfile.encoding=UTF-8 -jar git-info-viewer-1.0.0-jar-with-dependencies.jar
 
-REM 检查退出状态
-if %errorlevel% neq 0 (
-    echo.
-    echo ❌ 应用程序异常退出 (错误代码: %errorlevel%)
-    echo    请检查Java版本或联系技术支持
-    echo.
-) else (
-    echo.
-    echo ✅ 应用程序正常退出
-    echo.
-)
-
-pause
+echo ✅ 应用程序已启动
+timeout /t 2 /nobreak >nul

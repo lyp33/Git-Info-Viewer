@@ -334,8 +334,17 @@ public class InfoPanel extends JPanel {
             // 显示目录信息
             addDirectoryTitle(fileOrDirectory);
 
-            if (GitInfoExtractor.isGitRepository(fileOrDirectory)) {
-                addGitRepositoryPanel(fileOrDirectory);
+            // 检查当前目录或其父目录是否是 Git 仓库
+            File gitRepoRoot = findGitRepositoryRoot(fileOrDirectory);
+            
+            if (gitRepoRoot != null) {
+                // 如果当前目录本身是 Git 仓库根目录
+                if (GitInfoExtractor.isGitRepository(fileOrDirectory)) {
+                    addGitRepositoryPanel(fileOrDirectory);
+                } else {
+                    // 如果当前目录是 Git 仓库的子目录，显示其在仓库中的路径和分支
+                    addGitSubdirectoryPanel(fileOrDirectory, gitRepoRoot);
+                }
             } else {
                 addNotGitRepoPanel();
             }
@@ -349,6 +358,106 @@ public class InfoPanel extends JPanel {
         // 重新应用设置的字体（因为新建的组件使用了默认字体）
         Font rightFont = AppSettings.getInstance().getRightPanelFont();
         updateFont(rightFont);
+    }
+
+    /**
+     * 查找 Git 仓库根目录
+     */
+    private File findGitRepositoryRoot(File dir) {
+        File current = dir;
+        while (current != null) {
+            if (GitInfoExtractor.isGitRepository(current)) {
+                return current;
+            }
+            current = current.getParentFile();
+        }
+        return null;
+    }
+
+    /**
+     * 添加 Git 子目录信息面板
+     */
+    private void addGitSubdirectoryPanel(File subdir, File gitRepoRoot) {
+        try {
+            // 获取仓库信息
+            GitInfoExtractor.GitRepositoryInfo repoInfo = GitInfoExtractor.getRepositoryInfo(gitRepoRoot);
+            if (repoInfo == null) {
+                addNotGitRepoPanel();
+                return;
+            }
+
+            // 计算相对路径
+            String relativePath = gitRepoRoot.toPath().relativize(subdir.toPath()).toString().replace("\\", "/");
+            String currentBranch = repoInfo.getCurrentBranch();
+            
+            // 获取 remote URL
+            String remoteUrl = "";
+            if (repoInfo.getRemoteUrls() != null && !repoInfo.getRemoteUrls().isEmpty()) {
+                remoteUrl = repoInfo.getRemoteUrls().get(0);
+                // 移除 "origin : " 前缀
+                if (remoteUrl.contains(" : ")) {
+                    remoteUrl = remoteUrl.split(" : ")[1].trim();
+                }
+                // 移除 .git 后缀
+                if (remoteUrl.endsWith(".git")) {
+                    remoteUrl = remoteUrl.substring(0, remoteUrl.length() - 4);
+                }
+                // 转换 SSH 格式为 HTTPS
+                if (remoteUrl.startsWith("git@")) {
+                    // git@github.com:owner/repo -> https://github.com/owner/repo
+                    remoteUrl = remoteUrl.replace(":", "/").replace("git@", "https://");
+                }
+                // 添加相对路径
+                if (!relativePath.isEmpty()) {
+                    remoteUrl = remoteUrl + "/tree/" + currentBranch + "/" + relativePath;
+                }
+            }
+
+            // 创建可点击的面板
+            JPanel panel = new JPanel(new BorderLayout());
+            panel.setBackground(new Color(232, 240, 254));
+            panel.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(new Color(26, 115, 232), 1),
+                    BorderFactory.createEmptyBorder(10, 12, 10, 12)
+            ));
+            panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 70));
+
+            // 使用 HTML 格式化文本，支持换行和链接，使用更小的字体
+            String finalRemoteUrl = remoteUrl;
+            JEditorPane editorPane = new JEditorPane("text/html", 
+                "<html><body style='font-family: Segoe UI; font-size: 11px; margin: 0; padding: 0;'>" +
+                "<div style='margin-bottom: 3px;'><b style='color: #1967D2;'>Status:</b></div>" +
+                "<div style='margin-bottom: 2px;'><span style='color: #3C4043;'>Git Path: <a href='" + finalRemoteUrl + "' style='font-size: 11px;'>" + finalRemoteUrl + "</a></span></div>" +
+                "<div><span style='color: #3C4043;'>Branch: <b style='color: #1967D2;'>" + currentBranch + "</b></span></div>" +
+                "</body></html>");
+            
+            editorPane.setEditable(false);
+            editorPane.setOpaque(false);
+            editorPane.setBackground(new Color(232, 240, 254));
+            editorPane.setBorder(null);
+            editorPane.setMargin(new Insets(0, 0, 0, 0));
+            
+            // 添加超链接点击监听器
+            editorPane.addHyperlinkListener(e -> {
+                if (e.getEventType() == javax.swing.event.HyperlinkEvent.EventType.ACTIVATED) {
+                    try {
+                        Desktop.getDesktop().browse(e.getURL().toURI());
+                    } catch (Exception ex) {
+                        JOptionPane.showMessageDialog(this, 
+                            "Cannot open browser. URL: " + e.getURL(), 
+                            "Error", 
+                            JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            });
+            
+            panel.add(editorPane, BorderLayout.CENTER);
+            
+            mainPanel.add(panel);
+            mainPanel.add(Box.createVerticalStrut(15));
+        } catch (Exception e) {
+            addNotGitRepoPanel();
+        }
     }
 
     private void addDirectoryTitle(File directory) {
@@ -544,6 +653,9 @@ public class InfoPanel extends JPanel {
 
         repoBranchesMap.clear();
 
+        // 查找当前目录所属的 Git 仓库根目录
+        File gitRepoRoot = findGitRepositoryRoot(directory);
+
         String[] columnNames = {"Select", "Name", "Type", "Branch", "Remote", "Last Modified", "Author", "Action"};
         tableModel = new NonEditableTableModel(new Object[][]{}, columnNames);
 
@@ -599,8 +711,26 @@ public class InfoPanel extends JPanel {
                         row.add("-");
                     }
                 } else {
+                    // 普通目录 - 检查是否属于某个 Git 仓库
                     row.add("Directory");
-                    row.add("-");
+                    
+                    if (gitRepoRoot != null) {
+                        // 获取仓库信息
+                        GitInfoExtractor.GitRepositoryInfo repoInfo = GitInfoExtractor.getRepositoryInfo(gitRepoRoot);
+                        if (repoInfo != null) {
+                            // 计算相对路径
+                            String relativePath = gitRepoRoot.toPath().relativize(child.toPath()).toString().replace("\\", "/");
+                            String currentBranch = repoInfo.getCurrentBranch();
+                            
+                            // 在 Branch 列显示：相对路径 @ 分支名
+                            row.add(relativePath + " @ " + currentBranch);
+                        } else {
+                            row.add("-");
+                        }
+                    } else {
+                        row.add("-");
+                    }
+                    
                     row.add("-");
                     row.add("-");
                     row.add("-");
@@ -1912,11 +2042,35 @@ public class InfoPanel extends JPanel {
         // 计算文件相对于仓库根目录的路径
         String relativePath = repoDir.toPath().relativize(file.toPath()).toString().replace("\\", "/");
         
+        // 获取仓库信息
+        GitInfoExtractor.GitRepositoryInfo repoInfo = GitInfoExtractor.getRepositoryInfo(repoDir);
+        String currentBranch = repoInfo != null ? repoInfo.getCurrentBranch() : "Unknown";
+        
+        // 构建完整的 Git URL
+        String remoteUrl = "";
+        if (repoInfo != null && repoInfo.getRemoteUrls() != null && !repoInfo.getRemoteUrls().isEmpty()) {
+            remoteUrl = repoInfo.getRemoteUrls().get(0);
+            // 移除 "origin : " 前缀
+            if (remoteUrl.contains(" : ")) {
+                remoteUrl = remoteUrl.split(" : ")[1].trim();
+            }
+            // 移除 .git 后缀
+            if (remoteUrl.endsWith(".git")) {
+                remoteUrl = remoteUrl.substring(0, remoteUrl.length() - 4);
+            }
+            // 转换 SSH 格式为 HTTPS
+            if (remoteUrl.startsWith("git@")) {
+                remoteUrl = remoteUrl.replace(":", "/").replace("git@", "https://");
+            }
+            // 添加文件路径
+            remoteUrl = remoteUrl + "/blob/" + currentBranch + "/" + relativePath;
+        }
+        
         // 添加文件标题
         JPanel titlePanel = new JPanel(new BorderLayout());
         titlePanel.setBackground(PANEL_BG_COLOR);
         titlePanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 10, 5));
-        titlePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
+        titlePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50));
 
         JLabel pathLabel = new JLabel("<html><div style='padding: 8px 12px; background: #E8F0FE; border-radius: 6px;'>" +
                 "<span style='color: #1967D2; font-weight: bold;'>File:</span> " +
@@ -1927,6 +2081,47 @@ public class InfoPanel extends JPanel {
         titlePanel.add(pathLabel, BorderLayout.CENTER);
 
         mainPanel.add(titlePanel);
+        mainPanel.add(Box.createVerticalStrut(10));
+        
+        // 添加 Git Path 和 Branch 信息面板
+        JPanel gitInfoPanel = new JPanel(new BorderLayout());
+        gitInfoPanel.setBackground(new Color(232, 240, 254));
+        gitInfoPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(26, 115, 232), 1),
+                BorderFactory.createEmptyBorder(10, 12, 10, 12)
+        ));
+        gitInfoPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 70));
+
+        String finalRemoteUrl = remoteUrl;
+        JEditorPane gitInfoPane = new JEditorPane("text/html", 
+            "<html><body style='font-family: Segoe UI; font-size: 11px; margin: 0; padding: 0;'>" +
+            "<div style='margin-bottom: 3px;'><b style='color: #1967D2;'>Status:</b></div>" +
+            "<div style='margin-bottom: 2px;'><span style='color: #3C4043;'>Git Path: <a href='" + finalRemoteUrl + "' style='font-size: 11px;'>" + finalRemoteUrl + "</a></span></div>" +
+            "<div><span style='color: #3C4043;'>Branch: <b style='color: #1967D2;'>" + currentBranch + "</b></span></div>" +
+            "</body></html>");
+        
+        gitInfoPane.setEditable(false);
+        gitInfoPane.setOpaque(false);
+        gitInfoPane.setBackground(new Color(232, 240, 254));
+        gitInfoPane.setBorder(null);
+        gitInfoPane.setMargin(new Insets(0, 0, 0, 0));
+        
+        // 添加超链接点击监听器
+        gitInfoPane.addHyperlinkListener(e -> {
+            if (e.getEventType() == javax.swing.event.HyperlinkEvent.EventType.ACTIVATED) {
+                try {
+                    Desktop.getDesktop().browse(e.getURL().toURI());
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this, 
+                        "Cannot open browser. URL: " + e.getURL(), 
+                        "Error", 
+                        JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
+        
+        gitInfoPanel.add(gitInfoPane, BorderLayout.CENTER);
+        mainPanel.add(gitInfoPanel);
         mainPanel.add(Box.createVerticalStrut(10));
         
         // 创建提交历史表格

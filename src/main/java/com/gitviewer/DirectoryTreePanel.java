@@ -407,6 +407,26 @@ public class DirectoryTreePanel extends JPanel {
     }
 
     /**
+     * 获取当前选中的目录
+     */
+    public File getSelectedDirectory() {
+        TreePath path = tree.getSelectionPath();
+        if (path == null) {
+            return rootDirectory;
+        }
+
+        DefaultMutableTreeNode node = (DefaultMutableTreeNode) path.getLastPathComponent();
+        Object userObject = node.getUserObject();
+
+        if (userObject instanceof File) {
+            File file = (File) userObject;
+            return file.isDirectory() ? file : file.getParentFile();
+        }
+
+        return rootDirectory;
+    }
+
+    /**
      * 设置根目录
      */
     public void setRootDirectory(File directory) {
