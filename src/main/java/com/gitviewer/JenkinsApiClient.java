@@ -1097,11 +1097,20 @@ public class JenkinsApiClient {
                 String buildOutput = json.getString("build_output");
                 System.out.println("[JenkinsApiClient] Extracted build_output, length: " + buildOutput.length());
                 
-                // 检查是否包含 Unicode 转义序列
-                if (buildOutput.contains("\\u")) {
-                    System.out.println("[JenkinsApiClient] Detected Unicode escape sequences, decoding...");
+                // 检查是否包含转义序列（Unicode 或常见转义符）
+                // 使用 indexOf 避免编译器将 \\u 解释为 Unicode 转义
+                boolean hasEscapes = buildOutput.indexOf('\\') >= 0 && 
+                                    (buildOutput.contains("\\n") || buildOutput.contains("\\r") || 
+                                     buildOutput.contains("\\t") || buildOutput.indexOf("\\u") >= 0);
+                
+                if (hasEscapes) {
+                    System.out.println("[JenkinsApiClient] Detected escape sequences, decoding...");
                     buildOutput = decodeUnicodeEscapes(buildOutput);
                     System.out.println("[JenkinsApiClient] After decoding, length: " + buildOutput.length());
+                    
+                    // 检查解码后是否包含换行符
+                    int newlineCount = buildOutput.split("\n").length - 1;
+                    System.out.println("[JenkinsApiClient] Newline count after decoding: " + newlineCount);
                 }
                 
                 return buildOutput;
@@ -1133,17 +1142,53 @@ public class JenkinsApiClient {
         int i = 0;
         
         while (i < input.length()) {
-            if (i < input.length() - 5 && input.charAt(i) == '\\' && input.charAt(i + 1) == 'u') {
-                // 找到 \\uXXXX 格式的 Unicode 转义
-                try {
-                    String hex = input.substring(i + 2, i + 6);
-                    int codePoint = Integer.parseInt(hex, 16);
-                    result.append((char) codePoint);
-                    i += 6;
-                } catch (NumberFormatException e) {
-                    // 如果不是有效的十六进制，保留原样
-                    result.append(input.charAt(i));
-                    i++;
+            if (i < input.length() - 1 && input.charAt(i) == '\\') {
+                char nextChar = input.charAt(i + 1);
+                
+                // 处理常见的转义序列
+                switch (nextChar) {
+                    case 'n':  // 换行符
+                        result.append('\n');
+                        i += 2;
+                        break;
+                    case 'r':  // 回车符
+                        result.append('\r');
+                        i += 2;
+                        break;
+                    case 't':  // 制表符
+                        result.append('\t');
+                        i += 2;
+                        break;
+                    case '\\': // 反斜杠
+                        result.append('\\');
+                        i += 2;
+                        break;
+                    case '"':  // 双引号
+                        result.append('"');
+                        i += 2;
+                        break;
+                    case 'u':  // Unicode 转义 (backslash-u-XXXX format)
+                        if (i < input.length() - 5) {
+                            try {
+                                String hex = input.substring(i + 2, i + 6);
+                                int codePoint = Integer.parseInt(hex, 16);
+                                result.append((char) codePoint);
+                                i += 6;
+                            } catch (NumberFormatException e) {
+                                // 如果不是有效的十六进制，保留原样
+                                result.append(input.charAt(i));
+                                i++;
+                            }
+                        } else {
+                            result.append(input.charAt(i));
+                            i++;
+                        }
+                        break;
+                    default:
+                        // 其他情况保留原样
+                        result.append(input.charAt(i));
+                        i++;
+                        break;
                 }
             } else {
                 result.append(input.charAt(i));
