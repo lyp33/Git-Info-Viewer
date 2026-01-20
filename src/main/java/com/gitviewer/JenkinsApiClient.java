@@ -881,7 +881,7 @@ public class JenkinsApiClient {
      */
     private String extractPortalUrl(String stageLog) {
         System.out.println("[JenkinsApiClient] ========================================");
-        System.out.println("[JenkinsApiClient] VERSION: 2026-01-20-16:30 - Portal URL Query Params Fix");
+        System.out.println("[JenkinsApiClient] VERSION: 2026-01-20-17:20 - Find LAST Portal URL Match");
         System.out.println("[JenkinsApiClient] Extracting Portal URL from stage log (line by line)...");
         System.out.println("[JenkinsApiClient] ========================================");
         
@@ -907,6 +907,10 @@ public class JenkinsApiClient {
         System.out.println("[JenkinsApiClient] Quoted pattern: " + quotedPattern.pattern());
         System.out.println("[JenkinsApiClient] Unquoted pattern: " + unquotedPattern.pattern());
         
+        // 保存最后一个找到的 URL
+        String lastFoundUrl = null;
+        int lastFoundLineNumber = -1;
+        
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
             
@@ -917,6 +921,8 @@ public class JenkinsApiClient {
                 System.out.println("[JenkinsApiClient] Line content: " + line);
                 System.out.println("[JenkinsApiClient] ----------------------------------------");
                 
+                String foundUrl = null;
+                
                 // 先尝试匹配带引号的 URL
                 System.out.println("[JenkinsApiClient] Trying quoted pattern...");
                 Matcher quotedMatcher = quotedPattern.matcher(line);
@@ -924,28 +930,41 @@ public class JenkinsApiClient {
                     String urlWithQuotes = quotedMatcher.group(0);
                     System.out.println("[JenkinsApiClient] Quoted match found: " + urlWithQuotes);
                     // 移除引号
-                    String url = urlWithQuotes.substring(1, urlWithQuotes.length() - 1);
-                    System.out.println("[JenkinsApiClient] ✓✓✓ EXTRACTED Portal URL (quoted): " + url);
-                    System.out.println("[JenkinsApiClient] URL length: " + url.length());
-                    System.out.println("[JenkinsApiClient] ========================================");
-                    return url;
+                    foundUrl = urlWithQuotes.substring(1, urlWithQuotes.length() - 1);
+                    System.out.println("[JenkinsApiClient] Extracted URL (quoted): " + foundUrl);
+                    System.out.println("[JenkinsApiClient] URL length: " + foundUrl.length());
                 } else {
                     System.out.println("[JenkinsApiClient] No quoted match found");
+                    
+                    // 如果没有找到带引号的，尝试匹配不带引号的
+                    System.out.println("[JenkinsApiClient] Trying unquoted pattern...");
+                    Matcher unquotedMatcher = unquotedPattern.matcher(line);
+                    if (unquotedMatcher.find()) {
+                        foundUrl = unquotedMatcher.group(0);
+                        System.out.println("[JenkinsApiClient] Extracted URL (unquoted): " + foundUrl);
+                        System.out.println("[JenkinsApiClient] URL length: " + foundUrl.length());
+                    } else {
+                        System.out.println("[JenkinsApiClient] No unquoted match found");
+                    }
                 }
                 
-                // 如果没有找到带引号的，尝试匹配不带引号的
-                System.out.println("[JenkinsApiClient] Trying unquoted pattern...");
-                Matcher unquotedMatcher = unquotedPattern.matcher(line);
-                if (unquotedMatcher.find()) {
-                    String url = unquotedMatcher.group(0);
-                    System.out.println("[JenkinsApiClient] ✓✓✓ EXTRACTED Portal URL (unquoted): " + url);
-                    System.out.println("[JenkinsApiClient] URL length: " + url.length());
-                    System.out.println("[JenkinsApiClient] ========================================");
-                    return url;
-                } else {
-                    System.out.println("[JenkinsApiClient] No unquoted match found");
+                // 如果找到了 URL，保存为最后一个
+                if (foundUrl != null) {
+                    lastFoundUrl = foundUrl;
+                    lastFoundLineNumber = i + 1;
+                    System.out.println("[JenkinsApiClient] Saved as last found URL (line " + lastFoundLineNumber + ")");
                 }
             }
+        }
+        
+        // 返回最后一个找到的 URL
+        if (lastFoundUrl != null) {
+            System.out.println("[JenkinsApiClient] ========================================");
+            System.out.println("[JenkinsApiClient] ✓✓✓ RETURNING LAST Portal URL (line " + lastFoundLineNumber + "):");
+            System.out.println("[JenkinsApiClient] " + lastFoundUrl);
+            System.out.println("[JenkinsApiClient] URL length: " + lastFoundUrl.length());
+            System.out.println("[JenkinsApiClient] ========================================");
+            return lastFoundUrl;
         }
         
         System.out.println("[JenkinsApiClient] ✗✗✗ No Portal URL found in any line");
