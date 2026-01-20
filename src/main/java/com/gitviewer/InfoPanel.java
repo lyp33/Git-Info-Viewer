@@ -61,6 +61,7 @@ public class InfoPanel extends JPanel {
         String author;
         long commitTime;
         String changedFiles;
+        String repoPath;  // 仓库路径，用于构建commit链接
     }
 
     // Non-editable table model
@@ -1809,6 +1810,7 @@ public class InfoPanel extends JPanel {
                                     result.author = commit.getAuthor();
                                     result.commitTime = commit.getCommitTime();
                                     result.changedFiles = String.join(", ", changedFiles);
+                                    result.repoPath = repoDir.getAbsolutePath();  // 保存仓库路径
 
                                     results.add(result);
                                     foundCount++;
@@ -3321,20 +3323,28 @@ public class InfoPanel extends JPanel {
             
             int result = fileChooser.showSaveDialog(this);
             if (result == JFileChooser.APPROVE_OPTION) {
-                try (java.io.PrintWriter writer = new java.io.PrintWriter(fileChooser.getSelectedFile())) {
-                    // CSV头部
-                    writer.println("Project Name,Branch,Commit Code,Date,Author,Message,Changed Files");
+                try (java.io.PrintWriter writer = new java.io.PrintWriter(
+                        new java.io.OutputStreamWriter(
+                            new java.io.FileOutputStream(fileChooser.getSelectedFile()), 
+                            java.nio.charset.StandardCharsets.UTF_8))) {
+                    
+                    // CSV头部 - 添加 Commit Link 列
+                    writer.println("Project Name,Branch,Commit Code,Date,Author,Message,Changed Files,Commit Link");
                     
                     // 数据行
                     for (CommitSearchResult searchResult : results) {
-                        writer.printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"%n",
+                        // 构建 commit link
+                        String commitLink = buildCommitLink(searchResult.repoPath, searchResult.commitId);
+                        
+                        writer.printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"%n",
                             searchResult.projectName,
                             searchResult.branch,
                             searchResult.commitId,
                             dateFormat.format(new Date(searchResult.commitTime)),
                             searchResult.author,
                             searchResult.message.replace("\"", "\"\""),
-                            searchResult.changedFiles.replace("\"", "\"\"")
+                            searchResult.changedFiles.replace("\"", "\"\""),
+                            commitLink != null ? commitLink : ""
                         );
                     }
                     
@@ -3350,6 +3360,47 @@ public class InfoPanel extends JPanel {
                         JOptionPane.ERROR_MESSAGE);
                 }
             }
+        }
+        
+        /**
+         * 构建commit的超链接URL
+         * 参考 FileDiffDialog 的实现
+         */
+        private String buildCommitLink(String repoPath, String commitId) {
+            if (repoPath == null || commitId == null) {
+                return null;
+            }
+            
+            try {
+                File repoDir = new File(repoPath);
+                GitInfoExtractor.GitRepositoryInfo repoInfo = GitInfoExtractor.getRepositoryInfo(repoDir);
+                
+                if (repoInfo != null && repoInfo.getRemoteUrls() != null && !repoInfo.getRemoteUrls().isEmpty()) {
+                    String remoteUrl = repoInfo.getRemoteUrls().get(0);
+                    
+                    // 移除 "origin : " 前缀
+                    if (remoteUrl.contains(" : ")) {
+                        remoteUrl = remoteUrl.split(" : ")[1].trim();
+                    }
+                    
+                    // 移除 .git 后缀
+                    if (remoteUrl.endsWith(".git")) {
+                        remoteUrl = remoteUrl.substring(0, remoteUrl.length() - 4);
+                    }
+                    
+                    // 转换 SSH 格式为 HTTPS
+                    if (remoteUrl.startsWith("git@")) {
+                        remoteUrl = remoteUrl.replace(":", "/").replace("git@", "https://");
+                    }
+                    
+                    // 构建 commit URL (优先使用 GitLab 格式)
+                    return remoteUrl + "/-/commit/" + commitId;
+                }
+            } catch (Exception e) {
+                System.err.println("Error building commit link: " + e.getMessage());
+            }
+            
+            return null;
         }
         
         /**
