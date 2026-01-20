@@ -310,7 +310,27 @@ public class JenkinsStageLogDialog extends JDialog {
                     
                     // 追加最终的日志内容
                     portalLogTextArea.append("=== Portal API Response ===\n\n");
-                    portalLogTextArea.append(info.logContent != null ? info.logContent : "(empty response)");
+                    
+                    // 如果内容太大，截断并提示
+                    String logContent = info.logContent != null ? info.logContent : "(empty response)";
+                    final int MAX_DISPLAY_LENGTH = 500000; // 最多显示 500KB
+                    
+                    if (logContent.length() > MAX_DISPLAY_LENGTH) {
+                        System.out.println("[StageLogDialog] Log content too large (" + logContent.length() + " chars), truncating to " + MAX_DISPLAY_LENGTH);
+                        
+                        // 禁用文本区域更新以提高性能
+                        portalLogTextArea.setEditable(false);
+                        
+                        // 显示截断的内容
+                        portalLogTextArea.append("⚠ Warning: Log content is very large (" + logContent.length() + " characters).\n");
+                        portalLogTextArea.append("Displaying first " + MAX_DISPLAY_LENGTH + " characters only.\n\n");
+                        portalLogTextArea.append(logContent.substring(0, MAX_DISPLAY_LENGTH));
+                        portalLogTextArea.append("\n\n... (truncated)");
+                    } else {
+                        // 禁用文本区域更新以提高性能
+                        portalLogTextArea.setEditable(false);
+                        portalLogTextArea.append(logContent);
+                    }
                     
                     portalLogTextArea.setCaretPosition(0);  // 滚动到顶部
                     System.out.println("[StageLogDialog] Portal log displayed successfully");
