@@ -84,7 +84,7 @@ public class JenkinsStageLogDialog extends JDialog {
         
         // Tab 1: Jenkins Log
         jenkinsLogTextArea = new JTextArea();
-        jenkinsLogTextArea.setFont(new Font("Consolas", Font.PLAIN, 11));
+        jenkinsLogTextArea.setFont(new Font("Microsoft YaHei", Font.PLAIN, 11));
         jenkinsLogTextArea.setEditable(false);
         jenkinsLogTextArea.setLineWrap(false);
         jenkinsLogTextArea.setWrapStyleWord(false);
@@ -100,7 +100,7 @@ public class JenkinsStageLogDialog extends JDialog {
         
         // Tab 2: Portal Log
         portalLogTextArea = new JTextArea();
-        portalLogTextArea.setFont(new Font("Consolas", Font.PLAIN, 11));
+        portalLogTextArea.setFont(new Font("Microsoft YaHei", Font.PLAIN, 11));
         portalLogTextArea.setEditable(false);
         portalLogTextArea.setLineWrap(false);
         portalLogTextArea.setWrapStyleWord(false);
