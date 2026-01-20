@@ -1089,12 +1089,29 @@ public class JenkinsApiClient {
             // 调用 Portal API
             String jsonResponse = sendGetRequestWithHeaders(portalUrl, headers);
             System.out.println("[JenkinsApiClient] Portal API response length: " + jsonResponse.length());
+            System.out.println("[JenkinsApiClient] Portal API response preview: " + jsonResponse.substring(0, Math.min(200, jsonResponse.length())));
             
             // 解析 JSON 响应，提取 build_output 字段
             JSONObject json = new JSONObject(jsonResponse);
             
+            String buildOutput = null;
+            
+            // 首先检查根级别是否有 build_output
             if (json.has("build_output")) {
-                String buildOutput = json.getString("build_output");
+                buildOutput = json.getString("build_output");
+                System.out.println("[JenkinsApiClient] Found build_output at root level");
+            }
+            // 如果根级别没有，检查 callback 对象
+            else if (json.has("callback")) {
+                System.out.println("[JenkinsApiClient] Checking callback object for build_output");
+                JSONObject callback = json.getJSONObject("callback");
+                if (callback.has("build_output")) {
+                    buildOutput = callback.getString("build_output");
+                    System.out.println("[JenkinsApiClient] Found build_output in callback object");
+                }
+            }
+            
+            if (buildOutput != null) {
                 System.out.println("[JenkinsApiClient] Extracted build_output, length: " + buildOutput.length());
                 
                 // 检查是否包含转义序列（Unicode 或常见转义符）
@@ -1115,7 +1132,7 @@ public class JenkinsApiClient {
                 
                 return buildOutput;
             } else {
-                System.out.println("[JenkinsApiClient] No build_output field in response");
+                System.out.println("[JenkinsApiClient] No build_output field found in response (checked root and callback)");
                 return "No build_output field found in Portal API response.\n\nFull response:\n" + jsonResponse;
             }
             

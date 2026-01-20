@@ -1,12 +1,18 @@
 package com.gitviewer;
 
 import javax.swing.*;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.DefaultHighlighter;
+import javax.swing.text.Highlighter;
 import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.KeyEvent;
 
 /**
  * Jenkins Stage 日志对话框
  * 显示指定 Stage 的构建日志
  * 包含两个 Tab：Jenkins Log 和 Portal Log
+ * 支持 Ctrl+F 文本搜索功能
  */
 public class JenkinsStageLogDialog extends JDialog {
 
@@ -22,6 +28,13 @@ public class JenkinsStageLogDialog extends JDialog {
     
     // 缓存 Stage Log 供 Portal Log 使用
     private String cachedStageLog = null;
+    
+    // 搜索相关
+    private JPanel searchPanel;
+    private JTextField searchField;
+    private JLabel searchResultLabel;
+    private int currentSearchIndex = -1;
+    private java.util.List<Integer> searchPositions = new java.util.ArrayList<>();
 
     public JenkinsStageLogDialog(Window parent, JenkinsApiClient apiClient, 
                                   String jobPath, int buildNumber, JenkinsStage stage) {
@@ -79,6 +92,11 @@ public class JenkinsStageLogDialog extends JDialog {
         topPanel.add(buttonPanel, BorderLayout.EAST);
         add(topPanel, BorderLayout.NORTH);
 
+        // 搜索面板（初始隐藏）
+        searchPanel = createSearchPanel();
+        searchPanel.setVisible(false);
+        add(searchPanel, BorderLayout.SOUTH);
+
         // 中间面板 - Tab 页
         tabbedPane = new JTabbedPane();
         
@@ -134,13 +152,271 @@ public class JenkinsStageLogDialog extends JDialog {
         
         add(tabbedPane, BorderLayout.CENTER);
 
-        // 底部按钮面板
-        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        JButton closeButton = new JButton("Close");
-        closeButton.addActionListener(e -> dispose());
-        bottomPanel.add(closeButton);
+        // 注册 Ctrl+F 快捷键
+        registerSearchShortcut();
+    }
+    
+    /**
+     * 创建搜索面板
+     */
+    private JPanel createSearchPanel() {
+        JPanel panel = new JPanel(new BorderLayout(5, 5));
+        panel.setBorder(BorderFactory.createEmptyBorder(5, 10, 10, 10));
+        panel.setBackground(new Color(240, 240, 240));
         
-        add(bottomPanel, BorderLayout.SOUTH);
+        // 左侧：搜索输入框和按钮
+        JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        leftPanel.setOpaque(false);
+        
+        JLabel searchLabel = new JLabel("Find:");
+        searchLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        leftPanel.add(searchLabel);
+        
+        searchField = new JTextField(30);
+        searchField.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        searchField.addActionListener(e -> performSearch());
+        leftPanel.add(searchField);
+        
+        JButton findButton = new JButton("Find");
+        findButton.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        findButton.addActionListener(e -> performSearch());
+        leftPanel.add(findButton);
+        
+        JButton nextButton = new JButton("Next");
+        nextButton.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        nextButton.addActionListener(e -> findNext());
+        leftPanel.add(nextButton);
+        
+        JButton prevButton = new JButton("Previous");
+        prevButton.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        prevButton.addActionListener(e -> findPrevious());
+        leftPanel.add(prevButton);
+        
+        searchResultLabel = new JLabel("");
+        searchResultLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        searchResultLabel.setForeground(new Color(100, 100, 100));
+        leftPanel.add(searchResultLabel);
+        
+        panel.add(leftPanel, BorderLayout.WEST);
+        
+        // 右侧：关闭按钮
+        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        rightPanel.setOpaque(false);
+        
+        JButton closeButton = new JButton("✕");
+        closeButton.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        closeButton.setFocusPainted(false);
+        closeButton.setBorderPainted(false);
+        closeButton.setContentAreaFilled(false);
+        closeButton.addActionListener(e -> hideSearchPanel());
+        rightPanel.add(closeButton);
+        
+        panel.add(rightPanel, BorderLayout.EAST);
+        
+        return panel;
+    }
+    
+    /**
+     * 注册 Ctrl+F 快捷键
+     */
+    private void registerSearchShortcut() {
+        // 为整个对话框注册 Ctrl+F
+        KeyStroke ctrlF = KeyStroke.getKeyStroke(KeyEvent.VK_F, KeyEvent.CTRL_DOWN_MASK);
+        getRootPane().registerKeyboardAction(
+            e -> showSearchPanel(),
+            ctrlF,
+            JComponent.WHEN_IN_FOCUSED_WINDOW
+        );
+        
+        // 注册 ESC 键隐藏搜索面板
+        KeyStroke esc = KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0);
+        getRootPane().registerKeyboardAction(
+            e -> hideSearchPanel(),
+            esc,
+            JComponent.WHEN_IN_FOCUSED_WINDOW
+        );
+        
+        // 注册 F3 查找下一个
+        KeyStroke f3 = KeyStroke.getKeyStroke(KeyEvent.VK_F3, 0);
+        getRootPane().registerKeyboardAction(
+            e -> findNext(),
+            f3,
+            JComponent.WHEN_IN_FOCUSED_WINDOW
+        );
+        
+        // 注册 Shift+F3 查找上一个
+        KeyStroke shiftF3 = KeyStroke.getKeyStroke(KeyEvent.VK_F3, KeyEvent.SHIFT_DOWN_MASK);
+        getRootPane().registerKeyboardAction(
+            e -> findPrevious(),
+            shiftF3,
+            JComponent.WHEN_IN_FOCUSED_WINDOW
+        );
+    }
+    
+    /**
+     * 显示搜索面板
+     */
+    private void showSearchPanel() {
+        searchPanel.setVisible(true);
+        searchField.requestFocus();
+        searchField.selectAll();
+    }
+    
+    /**
+     * 隐藏搜索面板
+     */
+    private void hideSearchPanel() {
+        searchPanel.setVisible(false);
+        clearHighlights();
+        searchPositions.clear();
+        currentSearchIndex = -1;
+        searchResultLabel.setText("");
+    }
+    
+    /**
+     * 执行搜索
+     */
+    private void performSearch() {
+        String searchText = searchField.getText();
+        if (searchText == null || searchText.trim().isEmpty()) {
+            searchResultLabel.setText("Please enter search text");
+            return;
+        }
+        
+        // 获取当前活动的文本区域
+        JTextArea currentTextArea = getCurrentTextArea();
+        if (currentTextArea == null) {
+            return;
+        }
+        
+        String content = currentTextArea.getText();
+        if (content == null || content.isEmpty()) {
+            searchResultLabel.setText("No content to search");
+            return;
+        }
+        
+        // 清除之前的高亮
+        clearHighlights();
+        searchPositions.clear();
+        currentSearchIndex = -1;
+        
+        // 查找所有匹配位置（不区分大小写）
+        String lowerContent = content.toLowerCase();
+        String lowerSearch = searchText.toLowerCase();
+        int index = 0;
+        
+        while ((index = lowerContent.indexOf(lowerSearch, index)) != -1) {
+            searchPositions.add(index);
+            index += searchText.length();
+        }
+        
+        if (searchPositions.isEmpty()) {
+            searchResultLabel.setText("No matches found");
+            return;
+        }
+        
+        // 高亮所有匹配项
+        highlightAllMatches(currentTextArea, searchText);
+        
+        // 跳转到第一个匹配项
+        currentSearchIndex = 0;
+        highlightCurrentMatch(currentTextArea, searchText);
+        
+        searchResultLabel.setText(String.format("%d of %d", currentSearchIndex + 1, searchPositions.size()));
+    }
+    
+    /**
+     * 查找下一个
+     */
+    private void findNext() {
+        if (searchPositions.isEmpty()) {
+            performSearch();
+            return;
+        }
+        
+        currentSearchIndex = (currentSearchIndex + 1) % searchPositions.size();
+        JTextArea currentTextArea = getCurrentTextArea();
+        if (currentTextArea != null) {
+            highlightCurrentMatch(currentTextArea, searchField.getText());
+            searchResultLabel.setText(String.format("%d of %d", currentSearchIndex + 1, searchPositions.size()));
+        }
+    }
+    
+    /**
+     * 查找上一个
+     */
+    private void findPrevious() {
+        if (searchPositions.isEmpty()) {
+            performSearch();
+            return;
+        }
+        
+        currentSearchIndex = (currentSearchIndex - 1 + searchPositions.size()) % searchPositions.size();
+        JTextArea currentTextArea = getCurrentTextArea();
+        if (currentTextArea != null) {
+            highlightCurrentMatch(currentTextArea, searchField.getText());
+            searchResultLabel.setText(String.format("%d of %d", currentSearchIndex + 1, searchPositions.size()));
+        }
+    }
+    
+    /**
+     * 获取当前活动的文本区域
+     */
+    private JTextArea getCurrentTextArea() {
+        int selectedIndex = tabbedPane.getSelectedIndex();
+        if (selectedIndex == 0) {
+            return jenkinsLogTextArea;
+        } else if (selectedIndex == 1) {
+            return portalLogTextArea;
+        }
+        return null;
+    }
+    
+    /**
+     * 高亮所有匹配项
+     */
+    private void highlightAllMatches(JTextArea textArea, String searchText) {
+        Highlighter highlighter = textArea.getHighlighter();
+        Highlighter.HighlightPainter painter = new DefaultHighlighter.DefaultHighlightPainter(new Color(255, 255, 0, 100));
+        
+        for (int pos : searchPositions) {
+            try {
+                highlighter.addHighlight(pos, pos + searchText.length(), painter);
+            } catch (BadLocationException e) {
+                // 忽略
+            }
+        }
+    }
+    
+    /**
+     * 高亮当前匹配项
+     */
+    private void highlightCurrentMatch(JTextArea textArea, String searchText) {
+        if (currentSearchIndex < 0 || currentSearchIndex >= searchPositions.size()) {
+            return;
+        }
+        
+        int pos = searchPositions.get(currentSearchIndex);
+        
+        // 滚动到当前匹配项
+        try {
+            Rectangle rect = textArea.modelToView(pos);
+            if (rect != null) {
+                textArea.scrollRectToVisible(rect);
+            }
+            textArea.setCaretPosition(pos);
+            textArea.moveCaretPosition(pos + searchText.length());
+        } catch (BadLocationException e) {
+            // 忽略
+        }
+    }
+    
+    /**
+     * 清除所有高亮
+     */
+    private void clearHighlights() {
+        jenkinsLogTextArea.getHighlighter().removeAllHighlights();
+        portalLogTextArea.getHighlighter().removeAllHighlights();
     }
 
     /**
