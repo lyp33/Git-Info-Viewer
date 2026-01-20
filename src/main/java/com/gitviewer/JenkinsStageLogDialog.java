@@ -161,15 +161,17 @@ public class JenkinsStageLogDialog extends JDialog {
                     String stageLog = apiClient.fetchStageLog(jobPath, buildNumber, stage.getId(), stage.getName());
                     System.out.println("[StageLogDialog] Stage log fetched, length: " + (stageLog != null ? stageLog.length() : 0));
                     
-                    // 保存 Stage Log 供 Portal 使用（但不自动加载）
-                    cachedStageLog = stageLog;
-                    
                     // 尝试从 Stage Log 中提取子作业路径和构建 ID，并获取子作业的完整日志
                     System.out.println("[StageLogDialog] Fetching sub-job console log...");
                     String subJobLog = apiClient.fetchSubJobConsoleLog(stageLog);
                     System.out.println("[StageLogDialog] Sub-job log fetched, length: " + (subJobLog != null ? subJobLog.length() : 0));
                     
-                    // 如果成功获取子作业日志，返回它；否则返回原始 Stage Log
+                    // 缓存子作业日志供 Portal Log 使用（因为 curl 命令在子作业日志中）
+                    // 如果成功获取子作业日志，缓存它；否则缓存原始 Stage Log
+                    cachedStageLog = (subJobLog != null && !subJobLog.isEmpty()) ? subJobLog : stageLog;
+                    System.out.println("[StageLogDialog] Cached log for Portal Log, length: " + (cachedStageLog != null ? cachedStageLog.length() : 0));
+                    
+                    // 返回子作业日志用于显示
                     return subJobLog;
                 } catch (Exception e) {
                     System.err.println("[StageLogDialog] ERROR in doInBackground: " + e.getMessage());
