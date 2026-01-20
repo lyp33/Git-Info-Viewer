@@ -23,6 +23,7 @@ public class AIChatDialog extends JDialog {
     private JComboBox<String> branchComboBox;  // 分支下拉框（可编辑，支持筛选）
     private List<String> allBranches;  // 所有分支列表
     private String currentBranch;  // 当前选择的分支
+    private boolean isFilteringBranches = false;  // 标志位：是否正在筛选分支
     private List<AIService.ChatMessage> chatHistory;
     private AIService aiService;
     private String gitToken;
@@ -172,26 +173,37 @@ public class AIChatDialog extends JDialog {
             // 添加文档监听器实现实时筛选
             editor.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
                 public void changedUpdate(javax.swing.event.DocumentEvent e) {
-                    filterBranches();
+                    if (!isFilteringBranches) {
+                        SwingUtilities.invokeLater(() -> filterBranches());
+                    }
                 }
                 public void removeUpdate(javax.swing.event.DocumentEvent e) {
-                    filterBranches();
+                    if (!isFilteringBranches) {
+                        SwingUtilities.invokeLater(() -> filterBranches());
+                    }
                 }
                 public void insertUpdate(javax.swing.event.DocumentEvent e) {
-                    filterBranches();
+                    if (!isFilteringBranches) {
+                        SwingUtilities.invokeLater(() -> filterBranches());
+                    }
                 }
             });
             
             // 添加选择监听器
             branchComboBox.addActionListener(e -> {
-                if (e.getActionCommand().equals("comboBoxChanged")) {
-                    String selected = (String) branchComboBox.getSelectedItem();
-                    if (selected != null && !selected.equals(currentBranch)) {
-                        // 检查选择的分支是否在原始列表中
-                        if (allBranches.contains(selected)) {
-                            currentBranch = selected;
-                            System.out.println("[AI Chat] Branch changed to: " + currentBranch);
-                        }
+                // 如果正在筛选，忽略事件
+                if (isFilteringBranches) {
+                    return;
+                }
+                
+                String selected = (String) branchComboBox.getSelectedItem();
+                if (selected != null && !selected.trim().isEmpty() && !selected.equals(currentBranch)) {
+                    // 检查选择的分支是否在原始列表中
+                    if (allBranches.contains(selected)) {
+                        currentBranch = selected;
+                        System.out.println("[AI Chat] Branch changed to: " + currentBranch);
+                        // 添加分支切换的提示消息
+                        appendSystemMessage("✓ 已切换到分支: " + currentBranch);
                     }
                 }
             });
@@ -875,33 +887,68 @@ public class AIChatDialog extends JDialog {
      * 筛选分支列表（从可编辑的 ComboBox 编辑器获取筛选文本）
      */
     private void filterBranches() {
-        // 从 ComboBox 的编辑器组件获取筛选文本
-        JTextField editor = (JTextField) branchComboBox.getEditor().getEditorComponent();
-        String filter = editor.getText().toLowerCase().trim();
-        
-        // 暂时移除监听器，避免递归触发
-        branchComboBox.removeAllItems();
-        
-        if (filter.isEmpty()) {
-            // 没有筛选条件，显示所有分支
-            for (String branch : allBranches) {
-                branchComboBox.addItem(branch);
-            }
-        } else {
-            // 根据筛选条件过滤分支
-            for (String branch : allBranches) {
-                if (branch.toLowerCase().contains(filter)) {
-                    branchComboBox.addItem(branch);
-                }
-            }
+        if (isFilteringBranches || allBranches == null || allBranches.isEmpty()) {
+            return;
         }
         
-        // 恢复编辑器中的文本
-        editor.setText(filter);
+        isFilteringBranches = true;  // 设置标志位，防止递归
         
-        // 显示下拉列表
-        if (branchComboBox.getItemCount() > 0) {
-            branchComboBox.showPopup();
+        try {
+            // 从 ComboBox 的编辑器组件获取筛选文本
+            JTextField editor = (JTextField) branchComboBox.getEditor().getEditorComponent();
+            String filterText = editor.getText();
+            String filterTextLower = filterText.toLowerCase().trim();
+            
+            // 保存当前光标位置
+            int caretPosition = editor.getCaretPosition();
+            
+            // 移除所有项
+            branchComboBox.removeAllItems();
+            
+            if (filterTextLower.isEmpty()) {
+                // 没有筛选条件，显示所有分支
+                for (String branch : allBranches) {
+                    branchComboBox.addItem(branch);
+                }
+            } else {
+                // 根据筛选条件过滤分支
+                boolean hasMatches = false;
+                for (String branch : allBranches) {
+                    if (branch.toLowerCase().contains(filterTextLower)) {
+                        branchComboBox.addItem(branch);
+                        hasMatches = true;
+                    }
+                }
+                
+                // 如果没有匹配项，显示所有分支
+                if (!hasMatches) {
+                    for (String branch : allBranches) {
+                        branchComboBox.addItem(branch);
+                    }
+                }
+            }
+            
+            // 恢复编辑器中的文本和光标位置
+            editor.setText(filterText);
+            try {
+                editor.setCaretPosition(Math.min(caretPosition, filterText.length()));
+            } catch (IllegalArgumentException e) {
+                // 忽略光标位置错误
+            }
+            
+            // 显示下拉列表（只在有输入时，且组件可见且可显示时）
+            if (branchComboBox.getItemCount() > 0 && !filterTextLower.isEmpty() && 
+                branchComboBox.isShowing() && branchComboBox.isDisplayable()) {
+                try {
+                    branchComboBox.showPopup();
+                } catch (IllegalComponentStateException | IllegalArgumentException e) {
+                    // 忽略组件未完全显示时的异常
+                }
+            }
+        } catch (Exception e) {
+            // 捕获所有可能的异常，确保不影响主流程
+        } finally {
+            isFilteringBranches = false;  // 重置标志位
         }
     }
 }

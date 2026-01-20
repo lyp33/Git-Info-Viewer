@@ -162,7 +162,7 @@ public class InfoPanel extends JPanel {
 
         logTextArea = new JTextArea();
         logTextArea.setEditable(false);
-        logTextArea.setFont(new Font("Consolas", Font.PLAIN, 11));
+        logTextArea.setFont(new Font("Microsoft YaHei", Font.PLAIN, 11));
         logTextArea.setBackground(Color.WHITE);
         logTextArea.setForeground(new Color(60, 64, 67));
 
@@ -426,7 +426,7 @@ public class InfoPanel extends JPanel {
             String finalRemoteUrl = remoteUrl;
             JEditorPane editorPane = new JEditorPane("text/html", 
                 "<html><body style='font-family: Segoe UI; font-size: 11px; margin: 0; padding: 0;'>" +
-                "<div style='margin-bottom: 3px;'><b style='color: #1967D2;'>Status:</b></div>" +
+                "<div style='margin-bottom: 3px;'><b style='color: #1967D2; font-size: 10px;'>Status:</b></div>" +
                 "<div style='margin-bottom: 2px;'><span style='color: #3C4043;'>Git Path: <a href='" + finalRemoteUrl + "' style='font-size: 11px;'>" + finalRemoteUrl + "</a></span></div>" +
                 "<div><span style='color: #3C4043;'>Branch: <b style='color: #1967D2;'>" + currentBranch + "</b></span></div>" +
                 "</body></html>");
@@ -2095,7 +2095,7 @@ public class InfoPanel extends JPanel {
         String finalRemoteUrl = remoteUrl;
         JEditorPane gitInfoPane = new JEditorPane("text/html", 
             "<html><body style='font-family: Segoe UI; font-size: 11px; margin: 0; padding: 0;'>" +
-            "<div style='margin-bottom: 3px;'><b style='color: #1967D2;'>Status:</b></div>" +
+            "<div style='margin-bottom: 3px;'><b style='color: #1967D2; font-size: 10px;'>Status:</b></div>" +
             "<div style='margin-bottom: 2px;'><span style='color: #3C4043;'>Git Path: <a href='" + finalRemoteUrl + "' style='font-size: 11px;'>" + finalRemoteUrl + "</a></span></div>" +
             "<div><span style='color: #3C4043;'>Branch: <b style='color: #1967D2;'>" + currentBranch + "</b></span></div>" +
             "</body></html>");
@@ -2177,7 +2177,7 @@ public class InfoPanel extends JPanel {
         
         mainPanel.add(historyPanel);
         
-        // 添加双击监听器，显示文件diff
+        // 添加双击监听器和右键菜单
         final File finalRepoDir = repoDir;
         final String finalRelativePath = relativePath;
         historyTable.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -2191,6 +2191,20 @@ public class InfoPanel extends JPanel {
                         // 现在表格中直接存储完整的commit ID
                         showFileDiff(finalRepoDir, finalRelativePath, commitId);
                     }
+                }
+            }
+            
+            @Override
+            public void mousePressed(java.awt.event.MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    showCommitContextMenu(e, historyTable, tableModel, finalRepoDir, finalRelativePath);
+                }
+            }
+            
+            @Override
+            public void mouseReleased(java.awt.event.MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    showCommitContextMenu(e, historyTable, tableModel, finalRepoDir, finalRelativePath);
                 }
             }
         });
@@ -2267,6 +2281,104 @@ public class InfoPanel extends JPanel {
             commitId
         );
         dialog.setVisible(true);
+    }
+    
+    /**
+     * 显示commit记录的右键菜单
+     */
+    private void showCommitContextMenu(java.awt.event.MouseEvent e, JTable table, DefaultTableModel tableModel, 
+                                       File repoDir, String filePath) {
+        int row = table.rowAtPoint(e.getPoint());
+        if (row >= 0) {
+            table.setRowSelectionInterval(row, row);
+            int modelRow = table.convertRowIndexToModel(row);
+            String commitId = (String) tableModel.getValueAt(modelRow, 0);
+            
+            JPopupMenu popupMenu = new JPopupMenu();
+            
+            // 添加"View Updated File Detail"菜单项
+            JMenuItem viewDetailItem = new JMenuItem("View Updated File Detail");
+            viewDetailItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            viewDetailItem.addActionListener(ev -> {
+                openFileDetailInBrowser(repoDir, filePath, commitId);
+            });
+            popupMenu.add(viewDetailItem);
+            
+            popupMenu.show(e.getComponent(), e.getX(), e.getY());
+        }
+    }
+    
+    /**
+     * 在浏览器中打开文件的详细页面（特定commit中的文件内容）
+     */
+    private void openFileDetailInBrowser(File repoDir, String filePath, String commitId) {
+        try {
+            // 获取远程URL
+            String remoteUrl = getRemoteUrl(repoDir);
+            if (remoteUrl == null || remoteUrl.equals("No remote URL configured") || remoteUrl.startsWith("Error")) {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "Cannot find remote URL for this repository.",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+                );
+                return;
+            }
+            
+            // 构建文件详细URL
+            // 格式: https://gitlab.insuremo.com/gemini_core/claim-bs-core/-/blob/7463a327165662f6ddd9c75876fcaa4dc62b3c49/finance/arap/service/src/main/java/com/ebao/gemini/core/fin/arap/service/BsArapService.java
+            String fileDetailUrl = buildFileDetailUrl(remoteUrl, commitId, filePath);
+            
+            if (fileDetailUrl == null) {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "Cannot build file detail URL.",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+                );
+                return;
+            }
+            
+            // 打开浏览器
+            if (java.awt.Desktop.isDesktopSupported()) {
+                java.awt.Desktop desktop = java.awt.Desktop.getDesktop();
+                if (desktop.isSupported(java.awt.Desktop.Action.BROWSE)) {
+                    desktop.browse(new java.net.URI(fileDetailUrl));
+                }
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(
+                this,
+                "Cannot open browser: " + ex.getMessage(),
+                "Error",
+                JOptionPane.ERROR_MESSAGE
+            );
+            ex.printStackTrace();
+        }
+    }
+    
+    /**
+     * 构建文件详细页面的URL
+     * 格式: https://{git项目}/-/blob/{完整commitcode}/{文件path}
+     */
+    private String buildFileDetailUrl(String remoteUrl, String commitId, String filePath) {
+        if (remoteUrl == null || commitId == null || filePath == null) {
+            return null;
+        }
+        
+        try {
+            // 移除.git后缀
+            String baseUrl = remoteUrl;
+            if (baseUrl.endsWith(".git")) {
+                baseUrl = baseUrl.substring(0, baseUrl.length() - 4);
+            }
+            
+            // 构建文件详细URL
+            // 格式: https://gitlab.insuremo.com/project/-/blob/commitId/filePath
+            return baseUrl + "/-/blob/" + commitId + "/" + filePath;
+        } catch (Exception e) {
+            return null;
+        }
     }
     
     /**
@@ -2393,6 +2505,7 @@ public class InfoPanel extends JPanel {
         private static final Color BORDER_COLOR = new Color(227, 233, 239);
         private static final Color ODD_ROW_COLOR = new Color(255, 255, 255);
         private static final Color EVEN_ROW_COLOR = new Color(245, 248, 250);
+        private static final Color PRIMARY_COLOR = new Color(66, 133, 244);
 
         private JTable resultsTable;
         private DefaultTableModel tableModel;
@@ -2403,7 +2516,11 @@ public class InfoPanel extends JPanel {
         private JTextField authorFilterField;
         private JLabel resultCountLabel;
         private JTextArea commitDetailsTextArea;
+        private JList<String> changedFilesList;
+        private DefaultListModel<String> changedFilesListModel;
         private String currentCommitUrl;
+        private String currentSelectedProject;
+        private String currentSelectedCommit;
         private File currentDirectory; // 保存当前目录的引用
 
         public CommitSearchResultDialog(Frame parent, String searchKeywords, java.util.List<CommitSearchResult> results, File currentDir) {
@@ -2417,7 +2534,7 @@ public class InfoPanel extends JPanel {
 
         private void initializeUI(java.util.List<CommitSearchResult> results) {
             setLayout(new BorderLayout(10, 10));
-            setSize(1400, 800);
+            setSize(1600, 1000);
 
             // 主面板
             JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
@@ -2506,9 +2623,15 @@ public class InfoPanel extends JPanel {
                     new Color(95, 99, 104)
             ));
 
+            // 使用分割面板：上部显示commit信息，下部显示文件列表
+            JSplitPane detailsSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
+            detailsSplitPane.setResizeWeight(0.5);
+            detailsSplitPane.setBorder(null);
+
+            // 上部：commit信息
             commitDetailsTextArea = new JTextArea();
             commitDetailsTextArea.setEditable(false);
-            commitDetailsTextArea.setFont(new Font("Consolas", Font.PLAIN, 11));
+            commitDetailsTextArea.setFont(new Font("Microsoft YaHei", Font.PLAIN, 11));
             commitDetailsTextArea.setBackground(new Color(248, 249, 250));
             commitDetailsTextArea.setMargin(new Insets(10, 10, 10, 10));
             commitDetailsTextArea.setText("Select a commit to see detailed information...");
@@ -2529,8 +2652,45 @@ public class InfoPanel extends JPanel {
 
             JScrollPane detailsScroll = new JScrollPane(commitDetailsTextArea);
             detailsScroll.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1));
-            detailsScroll.setPreferredSize(new Dimension(Integer.MAX_VALUE, 200));
-            detailsPanel.add(detailsScroll, BorderLayout.CENTER);
+
+            // 下部：文件列表
+            changedFilesListModel = new DefaultListModel<>();
+            changedFilesList = new JList<>(changedFilesListModel);
+            changedFilesList.setFont(new Font("Microsoft YaHei", Font.PLAIN, 11));
+            changedFilesList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+            changedFilesList.setToolTipText("Double-click a file to view its diff");
+
+            // 添加双击监听器
+            changedFilesList.addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override
+                public void mouseClicked(java.awt.event.MouseEvent e) {
+                    if (e.getClickCount() == 2) {
+                        int index = changedFilesList.locationToIndex(e.getPoint());
+                        if (index >= 0 && currentSelectedProject != null && currentSelectedCommit != null) {
+                            String selectedFile = changedFilesListModel.getElementAt(index);
+                            String filePath = extractFilePath(selectedFile);
+                            openFileDiff(currentSelectedProject, filePath, currentSelectedCommit);
+                        }
+                    }
+                }
+            });
+
+            JScrollPane filesScroll = new JScrollPane(changedFilesList);
+            filesScroll.setBorder(BorderFactory.createTitledBorder(
+                    BorderFactory.createLineBorder(BORDER_COLOR, 1),
+                    "Changed Files (Double-click to view diff)",
+                    javax.swing.border.TitledBorder.LEFT,
+                    javax.swing.border.TitledBorder.TOP,
+                    new Font("Segoe UI", Font.PLAIN, 11),
+                    new Color(95, 99, 104)
+            ));
+
+            detailsSplitPane.setTopComponent(detailsScroll);
+            detailsSplitPane.setBottomComponent(filesScroll);
+            detailsSplitPane.setDividerLocation(150); // 设置分割线位置
+
+            detailsPanel.add(detailsSplitPane, BorderLayout.CENTER);
+            detailsPanel.setPreferredSize(new Dimension(Integer.MAX_VALUE, 400)); // 设置Commit Details区域的高度
 
             mainPanel.add(detailsPanel, BorderLayout.SOUTH);
 
@@ -2562,6 +2722,28 @@ public class InfoPanel extends JPanel {
                         String branch = (String) tableModel.getValueAt(modelRow, 1);
                         String commitId = (String) tableModel.getValueAt(modelRow, 2);
                         displayCommitDetails(projectName, branch, commitId);
+                    }
+                }
+            });
+
+            // 添加表格双击监听器，用于打开文件diff
+            resultsTable.addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override
+                public void mouseClicked(java.awt.event.MouseEvent e) {
+                    if (e.getClickCount() == 2) {
+                        int row = resultsTable.rowAtPoint(e.getPoint());
+                        int column = resultsTable.columnAtPoint(e.getPoint());
+                        
+                        // 检查是否双击了Changed Files列（第6列）
+                        if (row >= 0 && column == 6) {
+                            int modelRow = resultsTable.convertRowIndexToModel(row);
+                            String projectName = (String) tableModel.getValueAt(modelRow, 0);
+                            String commitId = (String) tableModel.getValueAt(modelRow, 2);
+                            String changedFiles = (String) tableModel.getValueAt(modelRow, 6);
+                            
+                            // 显示文件选择对话框
+                            showFileSelectionDialog(projectName, commitId, changedFiles);
+                        }
                     }
                 }
             });
@@ -2742,6 +2924,10 @@ public class InfoPanel extends JPanel {
          * 显示选中的commit详细信息
          */
         private void displayCommitDetails(String projectName, String branch, String commitId) {
+            // 保存当前选中的项目和commit
+            currentSelectedProject = projectName;
+            currentSelectedCommit = commitId;
+
             // 从原始结果中查找对应的commit
             CommitSearchResult selectedCommit = null;
             for (CommitSearchResult result : originalResults) {
@@ -2753,6 +2939,7 @@ public class InfoPanel extends JPanel {
 
             if (selectedCommit == null) {
                 commitDetailsTextArea.setText("Error: Cannot find commit details");
+                changedFilesListModel.clear();
                 return;
             }
 
@@ -2778,21 +2965,197 @@ public class InfoPanel extends JPanel {
 
             sb.append("\nMessage:\n");
             sb.append("========================================\n");
-            sb.append(selectedCommit.message).append("\n\n");
-
-            // 显示修改的文件
-            if (selectedCommit.changedFiles != null && !selectedCommit.changedFiles.trim().isEmpty()) {
-                String[] files = selectedCommit.changedFiles.split(",\\s*");
-                sb.append("Changed Files (").append(files.length).append("):\n");
-                sb.append("========================================\n");
-                for (String file : files) {
-                    sb.append(file).append("\n");
-                }
-            } else {
-                sb.append("Changed Files: No files changed or this is the initial commit.\n");
-            }
+            sb.append(selectedCommit.message);
 
             commitDetailsTextArea.setText(sb.toString());
+
+            // 填充文件列表
+            changedFilesListModel.clear();
+            if (selectedCommit.changedFiles != null && !selectedCommit.changedFiles.trim().isEmpty()) {
+                String[] files = selectedCommit.changedFiles.split(",\\s*");
+                for (String file : files) {
+                    if (file != null && !file.trim().isEmpty()) {
+                        changedFilesListModel.addElement(file.trim());
+                    }
+                }
+            }
+        }
+
+        /**
+         * 显示文件选择对话框
+         */
+        private void showFileSelectionDialog(String projectName, String commitId, String changedFilesStr) {
+            // 从原始结果中查找对应的commit
+            CommitSearchResult selectedCommit = null;
+            for (CommitSearchResult result : originalResults) {
+                if (result.projectName.equals(projectName) && result.commitId.equals(commitId)) {
+                    selectedCommit = result;
+                    break;
+                }
+            }
+
+            if (selectedCommit == null || changedFilesStr == null || changedFilesStr.trim().isEmpty()) {
+                JOptionPane.showMessageDialog(this,
+                    "No changed files found for this commit.",
+                    "No Files",
+                    JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+
+            // 解析changed files字符串
+            String[] files = changedFilesStr.split(",\\s*");
+            
+            if (files.length == 0) {
+                JOptionPane.showMessageDialog(this,
+                    "No changed files found for this commit.",
+                    "No Files",
+                    JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+
+            // 如果只有一个文件，直接打开
+            if (files.length == 1) {
+                String filePath = extractFilePath(files[0]);
+                openFileDiff(projectName, filePath, commitId);
+                return;
+            }
+
+            // 多个文件时，显示选择对话框
+            JDialog fileDialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), "Select File to View Diff", true);
+            fileDialog.setLayout(new BorderLayout(10, 10));
+            fileDialog.setSize(600, 400);
+            fileDialog.setLocationRelativeTo(this);
+
+            JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
+            mainPanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+
+            JLabel titleLabel = new JLabel("Select a file to view its diff:");
+            titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+            mainPanel.add(titleLabel, BorderLayout.NORTH);
+
+            // 创建文件列表
+            DefaultListModel<String> listModel = new DefaultListModel<>();
+            for (String file : files) {
+                listModel.addElement(file.trim());
+            }
+
+            JList<String> fileList = new JList<>(listModel);
+            fileList.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            fileList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+            
+            // 双击列表项打开diff
+            fileList.addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override
+                public void mouseClicked(java.awt.event.MouseEvent e) {
+                    if (e.getClickCount() == 2) {
+                        int index = fileList.locationToIndex(e.getPoint());
+                        if (index >= 0) {
+                            String selectedFile = listModel.getElementAt(index);
+                            String filePath = extractFilePath(selectedFile);
+                            fileDialog.dispose();
+                            openFileDiff(projectName, filePath, commitId);
+                        }
+                    }
+                }
+            });
+
+            JScrollPane scrollPane = new JScrollPane(fileList);
+            mainPanel.add(scrollPane, BorderLayout.CENTER);
+
+            // 按钮面板
+            JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+            
+            JButton viewButton = new JButton("View Diff");
+            viewButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            viewButton.addActionListener(e -> {
+                String selectedFile = fileList.getSelectedValue();
+                if (selectedFile != null) {
+                    String filePath = extractFilePath(selectedFile);
+                    fileDialog.dispose();
+                    openFileDiff(projectName, filePath, commitId);
+                } else {
+                    JOptionPane.showMessageDialog(fileDialog,
+                        "Please select a file first.",
+                        "No Selection",
+                        JOptionPane.WARNING_MESSAGE);
+                }
+            });
+            buttonPanel.add(viewButton);
+
+            JButton cancelButton = new JButton("Cancel");
+            cancelButton.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            cancelButton.addActionListener(e -> fileDialog.dispose());
+            buttonPanel.add(cancelButton);
+
+            mainPanel.add(buttonPanel, BorderLayout.SOUTH);
+            fileDialog.add(mainPanel);
+            fileDialog.setVisible(true);
+        }
+
+        /**
+         * 从文件字符串中提取文件路径（移除[MODIFY]、[ADD]等前缀）
+         */
+        private String extractFilePath(String fileStr) {
+            if (fileStr == null) {
+                return "";
+            }
+            
+            // 移除操作类型前缀
+            String path = fileStr.trim();
+            if (path.startsWith("[MODIFY]") || path.startsWith("[ADD]") || 
+                path.startsWith("[DELETE]") || path.startsWith("[RENAME]")) {
+                int endIndex = path.indexOf("]");
+                if (endIndex >= 0 && endIndex < path.length() - 1) {
+                    path = path.substring(endIndex + 1).trim();
+                }
+            }
+            
+            return path;
+        }
+
+        /**
+         * 打开文件diff对话框
+         */
+        private void openFileDiff(String projectName, String filePath, String commitId) {
+            // 查找项目目录
+            File projectDir = findProjectDirectory(projectName);
+            
+            if (projectDir == null) {
+                JOptionPane.showMessageDialog(this,
+                    "Cannot find project directory: " + projectName,
+                    "Project Not Found",
+                    JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            // 打开FileDiffDialog
+            try {
+                Frame parentFrame = (Frame) SwingUtilities.getWindowAncestor(this);
+                FileDiffDialog diffDialog = new FileDiffDialog(parentFrame, projectDir, filePath, commitId);
+                diffDialog.setVisible(true);
+            } catch (Exception e) {
+                JOptionPane.showMessageDialog(this,
+                    "Error opening file diff: " + e.getMessage(),
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE);
+            }
+        }
+
+        /**
+         * 查找项目目录
+         */
+        private File findProjectDirectory(String projectName) {
+            if (currentDirectory != null) {
+                File[] children = currentDirectory.listFiles();
+                if (children != null) {
+                    for (File child : children) {
+                        if (child.getName().equals(projectName) && child.isDirectory()) {
+                            return child;
+                        }
+                    }
+                }
+            }
+            return null;
         }
 
         /**

@@ -30,9 +30,19 @@ public class AppSettings {
     private String aiApiKey;
     private String aiModel;
 
+    // Jenkins 配置
+    private String jenkinsUrl;
+    private String jenkinsUsername;
+    private String jenkinsApiToken;
+    private String jenkinsDefaultJobPath;
+
     // 目录历史记录（最多保存5条）
     private List<String> directoryHistory;
     private static final int MAX_HISTORY_SIZE = 5;
+
+    // Jenkins 收藏任务列表
+    private List<FavoriteJob> jenkinsFavorites;
+    private static final int MAX_FAVORITES_SIZE = 50;
 
     // 默认字体
     private static final Font DEFAULT_LEFT_FONT = new Font("Arial", Font.PLAIN, 12);
@@ -51,6 +61,7 @@ public class AppSettings {
 
     private AppSettings() {
         directoryHistory = new ArrayList<>();
+        jenkinsFavorites = new ArrayList<>();
         loadSettings();
     }
 
@@ -111,6 +122,12 @@ public class AppSettings {
                 aiApiKey = props.getProperty("ai.api.key", "");
                 aiModel = props.getProperty("ai.model", "gpt-3.5-turbo");
 
+                // 加载Jenkins配置
+                jenkinsUrl = props.getProperty("jenkins.url", "");
+                jenkinsUsername = props.getProperty("jenkins.username", "");
+                jenkinsApiToken = props.getProperty("jenkins.api.token", "");
+                jenkinsDefaultJobPath = props.getProperty("jenkins.default.job.path", "job/gemini");
+
                 // 加载目录历史记录
                 directoryHistory.clear();
                 for (int i = 0; i < MAX_HISTORY_SIZE; i++) {
@@ -119,6 +136,9 @@ public class AppSettings {
                         directoryHistory.add(historyPath);
                     }
                 }
+
+                // 加载 Jenkins 收藏数据
+                loadJenkinsFavorites();
 
             } catch (IOException e) {
                 System.err.println("Error loading settings: " + e.getMessage());
@@ -172,6 +192,25 @@ public class AppSettings {
             }
             if (aiModel != null && !aiModel.isEmpty()) {
                 props.setProperty("ai.model", aiModel);
+            }
+
+            // 保存Jenkins配置
+            if (jenkinsUrl != null && !jenkinsUrl.isEmpty()) {
+                props.setProperty("jenkins.url", jenkinsUrl);
+            }
+            if (jenkinsUsername != null && !jenkinsUsername.isEmpty()) {
+                props.setProperty("jenkins.username", jenkinsUsername);
+            }
+            if (jenkinsApiToken != null && !jenkinsApiToken.isEmpty()) {
+                props.setProperty("jenkins.api.token", jenkinsApiToken);
+            }
+            // 允许保存空的 defaultJobPath（用于清除之前的值）
+            if (jenkinsDefaultJobPath != null) {
+                if (jenkinsDefaultJobPath.isEmpty()) {
+                    props.remove("jenkins.default.job.path"); // 移除属性
+                } else {
+                    props.setProperty("jenkins.default.job.path", jenkinsDefaultJobPath);
+                }
             }
 
             // 保存目录历史记录
@@ -302,5 +341,153 @@ public class AppSettings {
 
     public void setAiModel(String model) {
         this.aiModel = model;
+    }
+
+    // Jenkins 配置的 getter 和 setter
+    public String getJenkinsUrl() {
+        return jenkinsUrl != null ? jenkinsUrl : "";
+    }
+
+    public void setJenkinsUrl(String url) {
+        this.jenkinsUrl = url;
+    }
+
+    public String getJenkinsUsername() {
+        return jenkinsUsername != null ? jenkinsUsername : "";
+    }
+
+    public void setJenkinsUsername(String username) {
+        this.jenkinsUsername = username;
+    }
+
+    public String getJenkinsApiToken() {
+        return jenkinsApiToken != null ? jenkinsApiToken : "";
+    }
+
+    public void setJenkinsApiToken(String token) {
+        this.jenkinsApiToken = token;
+    }
+
+    public String getJenkinsDefaultJobPath() {
+        return jenkinsDefaultJobPath != null ? jenkinsDefaultJobPath : "job/gemini";
+    }
+
+    public void setJenkinsDefaultJobPath(String path) {
+        this.jenkinsDefaultJobPath = path;
+    }
+
+    // Jenkins 收藏功能的 getter 和 setter
+    public List<FavoriteJob> getJenkinsFavorites() {
+        return new ArrayList<>(jenkinsFavorites);
+    }
+
+    public void setJenkinsFavorites(List<FavoriteJob> favorites) {
+        this.jenkinsFavorites = new ArrayList<>(favorites);
+    }
+
+    /**
+     * 添加 Jenkins 收藏任务
+     */
+    public void addJenkinsFavorite(FavoriteJob job) {
+        if (job == null || job.getJobPath() == null) {
+            return;
+        }
+
+        // 检查是否已存在
+        for (FavoriteJob existing : jenkinsFavorites) {
+            if (existing.getJobPath().equals(job.getJobPath())) {
+                return; // 已存在，不重复添加
+            }
+        }
+
+        // 检查数量限制
+        if (jenkinsFavorites.size() >= MAX_FAVORITES_SIZE) {
+            System.err.println("收藏数量已达上限: " + MAX_FAVORITES_SIZE);
+            return;
+        }
+
+        // 设置顺序
+        job.setOrder(jenkinsFavorites.size());
+        jenkinsFavorites.add(job);
+        saveJenkinsFavorites();
+    }
+
+    /**
+     * 移除 Jenkins 收藏任务
+     */
+    public void removeJenkinsFavorite(String jobPath) {
+        jenkinsFavorites.removeIf(job -> job.getJobPath().equals(jobPath));
+        // 重新设置顺序
+        for (int i = 0; i < jenkinsFavorites.size(); i++) {
+            jenkinsFavorites.get(i).setOrder(i);
+        }
+        saveJenkinsFavorites();
+    }
+
+    /**
+     * 检查任务是否已收藏
+     */
+    public boolean isJobFavorited(String jobPath) {
+        return jenkinsFavorites.stream()
+                .anyMatch(job -> job.getJobPath().equals(jobPath));
+    }
+
+    /**
+     * 上移收藏任务
+     */
+    public void moveFavoriteUp(int index) {
+        if (index > 0 && index < jenkinsFavorites.size()) {
+            FavoriteJob job = jenkinsFavorites.remove(index);
+            jenkinsFavorites.add(index - 1, job);
+            // 重新设置顺序
+            for (int i = 0; i < jenkinsFavorites.size(); i++) {
+                jenkinsFavorites.get(i).setOrder(i);
+            }
+            saveJenkinsFavorites();
+        }
+    }
+
+    /**
+     * 下移收藏任务
+     */
+    public void moveFavoriteDown(int index) {
+        if (index >= 0 && index < jenkinsFavorites.size() - 1) {
+            FavoriteJob job = jenkinsFavorites.remove(index);
+            jenkinsFavorites.add(index + 1, job);
+            // 重新设置顺序
+            for (int i = 0; i < jenkinsFavorites.size(); i++) {
+                jenkinsFavorites.get(i).setOrder(i);
+            }
+            saveJenkinsFavorites();
+        }
+    }
+
+    /**
+     * 保存 Jenkins 收藏数据到文件
+     */
+    private void saveJenkinsFavorites() {
+        File file = new File(System.getProperty("user.home"), "gitviewer-jenkins-favorites.dat");
+        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(file))) {
+            oos.writeObject(jenkinsFavorites);
+        } catch (IOException e) {
+            System.err.println("Error saving Jenkins favorites: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 从文件加载 Jenkins 收藏数据
+     */
+    @SuppressWarnings("unchecked")
+    private void loadJenkinsFavorites() {
+        File file = new File(System.getProperty("user.home"), "gitviewer-jenkins-favorites.dat");
+        if (file.exists()) {
+            try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(file))) {
+                jenkinsFavorites = (List<FavoriteJob>) ois.readObject();
+            } catch (IOException | ClassNotFoundException e) {
+                System.err.println("Error loading Jenkins favorites: " + e.getMessage());
+                jenkinsFavorites = new ArrayList<>();
+            }
+        }
     }
 }

@@ -209,7 +209,13 @@ public class GitCredentialsDialog extends JDialog {
         String testUsername = usernameField.getText().trim();
         String testPassword = new String(passwordField.getPassword());
         
+        System.out.println("=== Git Credentials Test Started ===");
+        System.out.println("Repository URL: " + repositoryUrl);
+        System.out.println("Username: " + testUsername);
+        System.out.println("Password length: " + testPassword.length());
+        
         if (testUsername.isEmpty() || testPassword.isEmpty()) {
+            System.out.println("ERROR: Username or password is empty");
             JOptionPane.showMessageDialog(this, 
                 "Please enter both username and password/token.", 
                 "Missing Information", 
@@ -220,22 +226,40 @@ public class GitCredentialsDialog extends JDialog {
         testButton.setEnabled(false);
         statusLabel.setText("Testing...");
         statusLabel.setForeground(new Color(95, 99, 104));
+        System.out.println("Starting authentication test...");
         
         SwingWorker<Boolean, Void> worker = new SwingWorker<>() {
             private String errorMessage = null;
+            private Exception exception = null;
             
             @Override
             protected Boolean doInBackground() {
                 try {
+                    System.out.println("Creating credentials provider...");
                     CredentialsProvider cp = new UsernamePasswordCredentialsProvider(testUsername, testPassword);
+                    
+                    System.out.println("Calling Git.lsRemoteRepository()...");
+                    System.out.println("Remote URL: " + repositoryUrl);
+                    
+                    long startTime = System.currentTimeMillis();
                     Git.lsRemoteRepository()
                         .setRemote(repositoryUrl)
                         .setCredentialsProvider(cp)
                         .setHeads(true)
                         .call();
+                    long endTime = System.currentTimeMillis();
+                    
+                    System.out.println("SUCCESS: Authentication successful!");
+                    System.out.println("Time taken: " + (endTime - startTime) + "ms");
                     return true;
                 } catch (Exception e) {
+                    exception = e;
                     errorMessage = e.getMessage();
+                    System.err.println("ERROR: Authentication failed");
+                    System.err.println("Exception type: " + e.getClass().getName());
+                    System.err.println("Error message: " + errorMessage);
+                    System.err.println("Stack trace:");
+                    e.printStackTrace();
                     return false;
                 }
             }
@@ -244,21 +268,57 @@ public class GitCredentialsDialog extends JDialog {
             protected void done() {
                 testButton.setEnabled(true);
                 try {
-                    if (get()) {
+                    Boolean result = get();
+                    System.out.println("Test completed. Result: " + result);
+                    
+                    if (result) {
                         credentialsTested = true;
                         okButton.setEnabled(true);
                         statusLabel.setText("✓ Connection successful!");
                         statusLabel.setForeground(new Color(76, 175, 80));
+                        System.out.println("OK button enabled");
                     } else {
                         credentialsTested = false;
                         okButton.setEnabled(false);
-                        statusLabel.setText("✗ Authentication failed");
+                        String displayMessage = "✗ Authentication failed";
+                        if (errorMessage != null && !errorMessage.isEmpty()) {
+                            // 截取错误信息的前100个字符
+                            String shortError = errorMessage.length() > 100 ? 
+                                errorMessage.substring(0, 100) + "..." : errorMessage;
+                            displayMessage += ": " + shortError;
+                        }
+                        statusLabel.setText(displayMessage);
                         statusLabel.setForeground(Color.RED);
+                        System.out.println("OK button disabled");
+                        
+                        // 显示详细错误对话框
+                        if (exception != null) {
+                            SwingUtilities.invokeLater(() -> {
+                                JTextArea textArea = new JTextArea(10, 50);
+                                textArea.setText("Error Type: " + exception.getClass().getName() + "\n\n" +
+                                               "Error Message:\n" + errorMessage + "\n\n" +
+                                               "Please check:\n" +
+                                               "1. Username is correct\n" +
+                                               "2. Password/Token is valid\n" +
+                                               "3. Repository URL is accessible\n" +
+                                               "4. Network connection is working");
+                                textArea.setEditable(false);
+                                textArea.setCaretPosition(0);
+                                JScrollPane scrollPane = new JScrollPane(textArea);
+                                JOptionPane.showMessageDialog(GitCredentialsDialog.this,
+                                    scrollPane,
+                                    "Authentication Failed - Details",
+                                    JOptionPane.ERROR_MESSAGE);
+                            });
+                        }
                     }
                 } catch (Exception e) {
-                    statusLabel.setText("✗ Test failed");
+                    System.err.println("ERROR in done() method:");
+                    e.printStackTrace();
+                    statusLabel.setText("✗ Test failed: " + e.getMessage());
                     statusLabel.setForeground(Color.RED);
                 }
+                System.out.println("=== Git Credentials Test Completed ===\n");
             }
         };
         worker.execute();

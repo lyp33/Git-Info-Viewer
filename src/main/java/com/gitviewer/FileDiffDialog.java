@@ -27,7 +27,7 @@ public class FileDiffDialog extends JDialog {
     private String filePath;
     private String commitId;
     private boolean isScrollSyncing = false; // 防止循环触发
-    private JLabel fileInfoLabel; // 用于显示文件和commit信息
+    private JEditorPane fileInfoPane; // 用于显示文件和commit信息（支持超链接）
     
     public FileDiffDialog(Frame parent, File repoDirectory, String filePath, String commitId) {
         super(parent, "File Diff - " + filePath, true);
@@ -61,10 +61,28 @@ public class FileDiffDialog extends JDialog {
         titleLabel.setForeground(new Color(95, 99, 104));
         titlePanel.add(titleLabel, BorderLayout.NORTH);
         
-        fileInfoLabel = new JLabel("<html><b>File:</b> " + filePath + "<br><b>Commit:</b> " + commitId + "<br><b>Loading commit details...</b></html>");
-        fileInfoLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        fileInfoLabel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        titlePanel.add(fileInfoLabel, BorderLayout.CENTER);
+        fileInfoPane = new JEditorPane("text/html", "<html><b>File:</b> " + filePath + "<br><b>Commit:</b> " + commitId + "<br><b>Loading commit details...</b></html>");
+        fileInfoPane.setEditable(false);
+        fileInfoPane.setOpaque(false);
+        fileInfoPane.setBackground(Color.WHITE);
+        fileInfoPane.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        fileInfoPane.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        
+        // 添加超链接点击监听器
+        fileInfoPane.addHyperlinkListener(e -> {
+            if (e.getEventType() == javax.swing.event.HyperlinkEvent.EventType.ACTIVATED) {
+                try {
+                    java.awt.Desktop.getDesktop().browse(e.getURL().toURI());
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this, 
+                        "Cannot open browser. URL: " + e.getURL(), 
+                        "Error", 
+                        JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
+        
+        titlePanel.add(fileInfoPane, BorderLayout.CENTER);
         
         mainPanel.add(titlePanel, BorderLayout.NORTH);
         
@@ -190,10 +208,21 @@ public class FileDiffDialog extends JDialog {
                 try {
                     DiffResult result = get();
                     
+                    // 获取仓库的远程URL
+                    String remoteUrl = getRemoteUrl();
+                    String commitUrl = buildCommitUrl(remoteUrl, commitId);
+                    
                     // 更新文件信息标签
-                    StringBuilder info = new StringBuilder("<html>");
+                    StringBuilder info = new StringBuilder("<html><body style='font-family: Segoe UI; font-size: 12px;'>");
                     info.append("<b>File:</b> ").append(filePath).append("<br>");
-                    info.append("<b>Commit:</b> ").append(commitId).append("<br>");
+                    
+                    // Commit字段改为超链接
+                    if (commitUrl != null) {
+                        info.append("<b>Commit:</b> <a href='").append(commitUrl).append("'>").append(commitId).append("</a><br>");
+                    } else {
+                        info.append("<b>Commit:</b> ").append(commitId).append("<br>");
+                    }
+                    
                     if (result.author != null) {
                         info.append("<b>Author:</b> ").append(result.author).append("<br>");
                     }
@@ -201,8 +230,8 @@ public class FileDiffDialog extends JDialog {
                         java.text.SimpleDateFormat dateFormat = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
                         info.append("<b>Time:</b> ").append(dateFormat.format(result.commitTime));
                     }
-                    info.append("</html>");
-                    fileInfoLabel.setText(info.toString());
+                    info.append("</body></html>");
+                    fileInfoPane.setText(info.toString());
                     
                     // 显示diff
                     displayDiff(result.diffData);
@@ -378,5 +407,57 @@ public class FileDiffDialog extends JDialog {
         List<String> afterLines = new ArrayList<>();
         List<LineType> beforeTypes = new ArrayList<>();
         List<LineType> afterTypes = new ArrayList<>();
+    }
+    
+    /**
+     * 获取Git仓库的远程URL
+     */
+    private String getRemoteUrl() {
+        if (repoDirectory == null) {
+            return null;
+        }
+        
+        try {
+            GitInfoExtractor.GitRepositoryInfo repoInfo = GitInfoExtractor.getRepositoryInfo(repoDirectory);
+            if (repoInfo != null && repoInfo.getRemoteUrls() != null && !repoInfo.getRemoteUrls().isEmpty()) {
+                String remoteUrl = repoInfo.getRemoteUrls().get(0);
+                // 移除 "origin : " 前缀
+                if (remoteUrl.contains(" : ")) {
+                    remoteUrl = remoteUrl.split(" : ")[1].trim();
+                }
+                // 移除 .git 后缀
+                if (remoteUrl.endsWith(".git")) {
+                    remoteUrl = remoteUrl.substring(0, remoteUrl.length() - 4);
+                }
+                // 转换 SSH 格式为 HTTPS
+                if (remoteUrl.startsWith("git@")) {
+                    remoteUrl = remoteUrl.replace(":", "/").replace("git@", "https://");
+                }
+                return remoteUrl;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 构建commit的超链接URL
+     */
+    private String buildCommitUrl(String remoteUrl, String commitId) {
+        if (remoteUrl == null || commitId == null) {
+            return null;
+        }
+        
+        try {
+            // 构建commit URL
+            // 对于GitLab: /-/commit/
+            // 对于GitHub: /commit/
+            // 优先使用GitLab格式
+            return remoteUrl + "/-/commit/" + commitId;
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

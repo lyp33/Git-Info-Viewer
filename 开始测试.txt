@@ -1,0 +1,73 @@
+========================================
+Loading 对话框测试 - 快速开始
+========================================
+
+✅ 已完成配置：
+  - MockJenkinsServer 添加 10 秒延迟
+  - 支持 Build History
+  - 支持 Stage View (Module List)
+  - 支持 Console Log
+  - 支持 Stage Log
+  - 项目已重新编译
+  - 所有文件已就绪
+
+🚀 开始测试（2 个窗口）：
+
+【窗口 1】启动 Mock Server：
+  start-mock-jenkins.bat
+
+【窗口 2】启动应用：
+  java -jar target\git-info-viewer-1.0.0-jar-with-dependencies.jar
+
+⚙️ 配置连接：
+  1. Tools → Jenkins Browser
+  2. Settings
+  3. 输入：
+     - Jenkins URL: http://localhost:8888
+     - Username: test
+     - API Token: test123
+  4. Save
+
+🎯 测试功能：
+
+  测试 1：展开文件夹
+    → 点击展开 gemini
+    → ✅ 看到 Loading 对话框（10 秒）
+    → ✅ 看到进度条动画
+
+  测试 2：双击收藏
+    → 右键 backend-service → Add to Favorites
+    → 双击收藏项
+    → ✅ 看到 Loading 对话框（10 秒）
+    → ✅ 不报错，正确导航
+
+  测试 3：查看 Build History
+    → 点击任意 Job
+    → ✅ 看到 Loading 对话框（10 秒）
+    → ✅ 显示 5 次构建历史
+
+  测试 4：查看 Stage View
+    → 选择任意构建
+    → ✅ 看到 Loading 对话框（10 秒）
+    → ✅ 显示 5 个模块列表
+    → ✅ 显示 Console Log
+
+  测试 5：查看 Stage Log
+    → 双击任意模块
+    → ✅ 看到 Loading 对话框（10 秒）
+    → ✅ 弹出 Stage Log 对话框
+
+📊 预期效果：
+  - Loading 对话框立即显示
+  - 进度条持续动画 10 秒
+  - 10 秒后自动关闭
+  - 显示结果
+
+📚 详细文档：
+  - 测试Loading对话框指南.md
+  - 测试Stage和ConsoleLog指南.md
+  - LOADING_DIALOG_TEST_COMPLETE.md
+
+========================================
+现在可以开始测试了！🎉
+========================================

@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Compile and Run Java JAR",
+  "description": "Compiles the Java project into a JAR package using Maven and then runs the JAR file",
+  "version": "1",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Run `mvn clean package` to compile and package the Java project into a JAR, then run `java -jar target/git-info-viewer-1.0.0-jar-with-dependencies.jar` to execute the JAR file. Show me the output of both commands."
+  }
+}

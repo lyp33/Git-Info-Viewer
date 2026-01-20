@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "name": "Upload File",
+  "description": "Uploads files as attachments to ALM tracker artf1486752 at alm.ebaotech.com using credentials yunpeng.li / Liyufg001!",
+  "version": "1",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Upload the specified file to ALM tracker artf1486752:\n1. Open https://alm.ebaotech.com/ and login with username: yunpeng.li and password: Liyufg001!\n2. Search for and open tracker artf1486752\n3. Upload the file as an attachment to this tracker\nPlease complete this task and confirm when the file has been successfully uploaded."
+  },
+  "workspaceFolderName": "git",
+  "shortName": "upload-to-alm-tracker"
+}

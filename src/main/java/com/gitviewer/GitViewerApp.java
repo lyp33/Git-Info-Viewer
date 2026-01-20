@@ -95,11 +95,36 @@ public class GitViewerApp extends JFrame {
         // 添加到主面板
         mainPanel.add(splitPane, BorderLayout.CENTER);
         
+        // 创建状态栏
+        JPanel statusBar = createStatusBar();
+        mainPanel.add(statusBar, BorderLayout.SOUTH);
+        
         // 添加到主窗口
         add(mainPanel, BorderLayout.CENTER);
 
         // 创建菜单栏
         createMenuBar();
+    }
+
+    /**
+     * 创建状态栏
+     */
+    private JPanel createStatusBar() {
+        JPanel statusBar = new JPanel(new BorderLayout());
+        statusBar.setBackground(Color.WHITE);
+        statusBar.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(1, 0, 0, 0, DIVIDER_COLOR),
+            BorderFactory.createEmptyBorder(5, 10, 5, 10)
+        ));
+        
+        // 作者信息标签 - 右对齐
+        JLabel authorLabel = new JLabel("yunpeng.li / v2.0 / 20260113");
+        authorLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        authorLabel.setForeground(new Color(95, 99, 104));
+        
+        statusBar.add(authorLabel, BorderLayout.EAST);
+        
+        return statusBar;
     }
 
     private void createMenuBar() {
@@ -187,6 +212,32 @@ public class GitViewerApp extends JFrame {
         chatMenu.add(aiSettingsItem);
         
         menuBar.add(chatMenu);
+
+        // CI/CD 菜单
+        JMenu cicdMenu = new JMenu("CI/CD");
+        cicdMenu.setFont(menuFont);
+        styleMenu(cicdMenu);
+        
+        JMenuItem coreSdkBuildItem = new JMenuItem("Core/SDK Build...");
+        coreSdkBuildItem.setFont(menuFont);
+        coreSdkBuildItem.addActionListener(e -> showJenkinsBrowserDialog());
+        cicdMenu.add(coreSdkBuildItem);
+        
+        cicdMenu.addSeparator();
+        
+        JMenuItem tenantCICDItem = new JMenuItem("Tenant CI/CD...");
+        tenantCICDItem.setFont(menuFont);
+        tenantCICDItem.addActionListener(e -> showTenantCICDDialog());
+        cicdMenu.add(tenantCICDItem);
+        
+        cicdMenu.addSeparator();
+        
+        JMenuItem jenkinsSettingsItem = new JMenuItem("Jenkins Settings...");
+        jenkinsSettingsItem.setFont(menuFont);
+        jenkinsSettingsItem.addActionListener(e -> showJenkinsSettingsDialog());
+        cicdMenu.add(jenkinsSettingsItem);
+        
+        menuBar.add(cicdMenu);
 
         // 帮助菜单
         JMenu helpMenu = new JMenu("Help");
@@ -329,6 +380,30 @@ public class GitViewerApp extends JFrame {
      */
     private void showAISettingsDialog() {
         AISettingsDialog dialog = new AISettingsDialog(this);
+        dialog.setVisible(true);
+    }
+
+    /**
+     * 显示 Jenkins 浏览器对话框
+     */
+    private void showJenkinsBrowserDialog() {
+        JenkinsBrowserDialog dialog = new JenkinsBrowserDialog(this);
+        dialog.setVisible(true);
+    }
+
+    /**
+     * 显示 Tenant CI/CD 对话框
+     */
+    private void showTenantCICDDialog() {
+        TenantCICDDialog dialog = new TenantCICDDialog(this);
+        dialog.setVisible(true);
+    }
+
+    /**
+     * 显示 Jenkins 设置对话框
+     */
+    private void showJenkinsSettingsDialog() {
+        JenkinsSettingsDialog dialog = new JenkinsSettingsDialog(this);
         dialog.setVisible(true);
     }
 
