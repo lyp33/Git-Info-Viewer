@@ -891,25 +891,38 @@ public class JenkinsApiClient {
         String[] lines = stageLog.split("\n");
         System.out.println("[JenkinsApiClient] Total lines to parse: " + lines.length);
         
-        // 匹配 https://portal-gw.insuremo.com/ 开头的 URL
-        // 支持多种路径：eBao, edBor 等
-        // 可能的格式：
-        // 1. curl ... 'https://portal-gw.insuremo.com/...' ...
-        // 2. curl ... "https://portal-gw.insuremo.com/..." ...
-        // 3. curl ... https://portal-gw.insuremo.com/... ...
-        Pattern pattern = Pattern.compile("https://portal-gw\\.insuremo\\.com/[^\\s'\"]+");
+        // 匹配 https://portal-gw.insuremo.com/ 开头的 URL（包括查询参数）
+        // 支持多种格式：
+        // 1. curl ... 'https://portal-gw.insuremo.com/...' ... (单引号包围)
+        // 2. curl ... "https://portal-gw.insuremo.com/..." ... (双引号包围)
+        // 3. curl ... https://portal-gw.insuremo.com/... ... (无引号)
+        
+        // 尝试三种模式
+        Pattern quotedPattern = Pattern.compile("['\"]https://portal-gw\\.insuremo\\.com/[^'\"]*['\"]");
+        Pattern unquotedPattern = Pattern.compile("https://portal-gw\\.insuremo\\.com/\\S+");
         
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
             
             // 只处理包含 curl 和 portal-gw 的行
             if (line.contains("curl") && line.contains("portal-gw.insuremo.com")) {
-                System.out.println("[JenkinsApiClient] Found potential Portal URL line " + (i + 1) + ": " + line.substring(0, Math.min(100, line.length())));
+                System.out.println("[JenkinsApiClient] Found potential Portal URL line " + (i + 1) + ": " + line.substring(0, Math.min(150, line.length())));
                 
-                Matcher matcher = pattern.matcher(line);
-                if (matcher.find()) {
-                    String url = matcher.group(0);
-                    System.out.println("[JenkinsApiClient] ✓ Extracted Portal URL: " + url);
+                // 先尝试匹配带引号的 URL
+                Matcher quotedMatcher = quotedPattern.matcher(line);
+                if (quotedMatcher.find()) {
+                    String urlWithQuotes = quotedMatcher.group(0);
+                    // 移除引号
+                    String url = urlWithQuotes.substring(1, urlWithQuotes.length() - 1);
+                    System.out.println("[JenkinsApiClient] ✓ Extracted Portal URL (quoted): " + url);
+                    return url;
+                }
+                
+                // 如果没有找到带引号的，尝试匹配不带引号的
+                Matcher unquotedMatcher = unquotedPattern.matcher(line);
+                if (unquotedMatcher.find()) {
+                    String url = unquotedMatcher.group(0);
+                    System.out.println("[JenkinsApiClient] ✓ Extracted Portal URL (unquoted): " + url);
                     return url;
                 }
             }
