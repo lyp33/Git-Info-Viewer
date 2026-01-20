@@ -60,10 +60,35 @@ public class SettingsDialog extends JDialog {
         add(mainPanel, BorderLayout.CENTER);
 
         // 按钮面板
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        buttonPanel.setBackground(Color.WHITE);
+        
         JButton okButton = new JButton("OK");
+        okButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        okButton.setPreferredSize(new Dimension(100, 35));
+        okButton.setBackground(new Color(66, 133, 244));
+        okButton.setForeground(Color.WHITE);
+        okButton.setFocusPainted(false);
+        okButton.setBorderPainted(false);
+        okButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        
         JButton cancelButton = new JButton("Cancel");
+        cancelButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        cancelButton.setPreferredSize(new Dimension(100, 35));
+        cancelButton.setBackground(new Color(95, 99, 104));
+        cancelButton.setForeground(Color.WHITE);
+        cancelButton.setFocusPainted(false);
+        cancelButton.setBorderPainted(false);
+        cancelButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        
         JButton applyButton = new JButton("Switch");
+        applyButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        applyButton.setPreferredSize(new Dimension(100, 35));
+        applyButton.setBackground(new Color(52, 168, 83));
+        applyButton.setForeground(Color.WHITE);
+        applyButton.setFocusPainted(false);
+        applyButton.setBorderPainted(false);
+        applyButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
         okButton.addActionListener(e -> {
             applySettings();

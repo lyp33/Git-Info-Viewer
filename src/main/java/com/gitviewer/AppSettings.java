@@ -44,6 +44,11 @@ public class AppSettings {
     private List<FavoriteJob> jenkinsFavorites;
     private static final int MAX_FAVORITES_SIZE = 50;
 
+    // Portal 配置（Tenant CI/CD功能）
+    private String portalUsername;
+    private String portalPassword;  // 加密存储
+    private List<String> portalTenantCodes;
+
     // 默认字体
     private static final Font DEFAULT_LEFT_FONT = new Font("Arial", Font.PLAIN, 12);
     private static final Font DEFAULT_RIGHT_FONT = new Font("Segoe UI", Font.PLAIN, 12);
@@ -62,6 +67,7 @@ public class AppSettings {
     private AppSettings() {
         directoryHistory = new ArrayList<>();
         jenkinsFavorites = new ArrayList<>();
+        portalTenantCodes = new ArrayList<>();
         loadSettings();
     }
 
@@ -140,6 +146,12 @@ public class AppSettings {
                 // 加载 Jenkins 收藏数据
                 loadJenkinsFavorites();
 
+                // 加载Portal配置
+                portalUsername = props.getProperty("portal.username", "");
+                portalPassword = props.getProperty("portal.password", "");
+                String tenantCodesStr = props.getProperty("portal.tenant.codes", "");
+                portalTenantCodes = TenantCICDUtils.parseTenantCodes(tenantCodesStr);
+
             } catch (IOException e) {
                 System.err.println("Error loading settings: " + e.getMessage());
                 setDefaultFonts();
@@ -216,6 +228,18 @@ public class AppSettings {
             // 保存目录历史记录
             for (int i = 0; i < directoryHistory.size(); i++) {
                 props.setProperty("directory.history." + i, directoryHistory.get(i));
+            }
+
+            // 保存Portal配置
+            if (portalUsername != null && !portalUsername.isEmpty()) {
+                props.setProperty("portal.username", portalUsername);
+            }
+            if (portalPassword != null && !portalPassword.isEmpty()) {
+                props.setProperty("portal.password", portalPassword);
+            }
+            if (portalTenantCodes != null && !portalTenantCodes.isEmpty()) {
+                String tenantCodesStr = TenantCICDUtils.formatTenantCodes(portalTenantCodes);
+                props.setProperty("portal.tenant.codes", tenantCodesStr);
             }
 
             props.store(fos, "Git Info Viewer Settings");
@@ -489,5 +513,55 @@ public class AppSettings {
                 jenkinsFavorites = new ArrayList<>();
             }
         }
+    }
+
+    // Portal 配置的 getter 和 setter
+    public String getPortalUsername() {
+        return portalUsername != null ? portalUsername : "";
+    }
+
+    public void setPortalUsername(String username) {
+        this.portalUsername = username;
+    }
+
+    /**
+     * 获取Portal密码（解密后）
+     * Get Portal password (decrypted)
+     * 
+     * @return 解密后的密码
+     */
+    public String getPortalPassword() {
+        if (portalPassword == null || portalPassword.isEmpty()) {
+            return "";
+        }
+        
+        // 解密密码
+        String decrypted = PasswordEncryption.decrypt(portalPassword);
+        return decrypted != null ? decrypted : "";
+    }
+
+    /**
+     * 设置Portal密码（加密后存储）
+     * Set Portal password (encrypted before storage)
+     * 
+     * @param password 明文密码
+     */
+    public void setPortalPassword(String password) {
+        if (password == null || password.isEmpty()) {
+            this.portalPassword = "";
+            return;
+        }
+        
+        // 加密密码
+        String encrypted = PasswordEncryption.encrypt(password);
+        this.portalPassword = encrypted != null ? encrypted : "";
+    }
+
+    public List<String> getPortalTenantCodes() {
+        return portalTenantCodes != null ? new ArrayList<>(portalTenantCodes) : new ArrayList<>();
+    }
+
+    public void setPortalTenantCodes(List<String> tenantCodes) {
+        this.portalTenantCodes = tenantCodes != null ? new ArrayList<>(tenantCodes) : new ArrayList<>();
     }
 }

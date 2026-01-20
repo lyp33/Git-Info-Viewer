@@ -128,7 +128,9 @@ public class JenkinsBrowserDialog extends JDialog {
 
         // 添加滚动面板
         JScrollPane treeScrollPane = new JScrollPane(tree);
-        treeScrollPane.setBorder(BorderFactory.createTitledBorder("Jenkins Job Browser"));
+        javax.swing.border.TitledBorder treeBorder = BorderFactory.createTitledBorder("Jenkins Job Browser");
+        treeBorder.setTitleFont(new Font("Segoe UI", Font.BOLD, 12));
+        treeScrollPane.setBorder(treeBorder);
         mainSplitPane.setTopComponent(treeScrollPane);
 
         // 下部：控制台日志
@@ -139,7 +141,9 @@ public class JenkinsBrowserDialog extends JDialog {
         consoleArea.setForeground(Color.WHITE);  // 白色字体
         consoleArea.setCaretColor(Color.WHITE);  // 白色光标
         JScrollPane consoleScrollPane = new JScrollPane(consoleArea);
-        consoleScrollPane.setBorder(BorderFactory.createTitledBorder("Console Log"));
+        javax.swing.border.TitledBorder consoleBorder = BorderFactory.createTitledBorder("Console Log");
+        consoleBorder.setTitleFont(new Font("Segoe UI", Font.BOLD, 12));
+        consoleScrollPane.setBorder(consoleBorder);
         mainSplitPane.setBottomComponent(consoleScrollPane);
 
         // 创建中心面板，包含收藏面板和主分割面板

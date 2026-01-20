@@ -237,6 +237,11 @@ public class GitViewerApp extends JFrame {
         jenkinsSettingsItem.addActionListener(e -> showJenkinsSettingsDialog());
         cicdMenu.add(jenkinsSettingsItem);
         
+        JMenuItem portalSettingsItem = new JMenuItem("Portal Settings...");
+        portalSettingsItem.setFont(menuFont);
+        portalSettingsItem.addActionListener(e -> showPortalSettingsDialog());
+        cicdMenu.add(portalSettingsItem);
+        
         menuBar.add(cicdMenu);
 
         // 帮助菜单
@@ -404,6 +409,14 @@ public class GitViewerApp extends JFrame {
      */
     private void showJenkinsSettingsDialog() {
         JenkinsSettingsDialog dialog = new JenkinsSettingsDialog(this);
+        dialog.setVisible(true);
+    }
+
+    /**
+     * 显示 Portal 设置对话框
+     */
+    private void showPortalSettingsDialog() {
+        PortalSettingsDialog dialog = new PortalSettingsDialog(this);
         dialog.setVisible(true);
     }
 

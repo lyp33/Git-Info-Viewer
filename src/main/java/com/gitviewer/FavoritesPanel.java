@@ -24,18 +24,21 @@ public class FavoritesPanel extends JPanel {
     
     private void initComponents() {
         setLayout(new BorderLayout());
-        setBorder(BorderFactory.createTitledBorder(
+        javax.swing.border.TitledBorder border = BorderFactory.createTitledBorder(
             BorderFactory.createEtchedBorder(),
-            "\u2B50 Favorite Jobs",
+            "Favorite Jobs",
             TitledBorder.LEFT,
             TitledBorder.TOP
-        ));
+        );
+        border.setTitleFont(new Font("Segoe UI", Font.BOLD, 12));
+        setBorder(border);
         
         // 创建列表模型和列表
         listModel = new DefaultListModel<>();
         favoritesList = new JList<>(listModel);
         favoritesList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         favoritesList.setCellRenderer(new FavoriteJobRenderer());
+        favoritesList.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         
         // 添加双击监听器 - 定位到任务
         favoritesList.addMouseListener(new MouseAdapter() {
@@ -372,8 +375,8 @@ public class FavoritesPanel extends JPanel {
                 // Display full job path instead of just name
                 String jobPath = job.getJobPath();
                 
-                // Use Unicode star character to avoid encoding issues
-                String displayText = "\u2B50 " + jobPath;
+                // Use star icon for favorite
+                String displayText = "★ " + jobPath;
                 
                 setText(displayText);
                 
@@ -387,14 +390,11 @@ public class FavoritesPanel extends JPanel {
                 // Set icon and style
                 setIcon(null); // Use star in text instead of icon
                 
-                // Set font
-                Font font = getFont();
-                if (font != null) {
-                    setFont(font.deriveFont(Font.PLAIN));
-                }
+                // Set font - larger and clearer
+                setFont(new Font("Segoe UI", Font.PLAIN, 12));
                 
                 // Set margins
-                setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
+                setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
             }
             
             return this;

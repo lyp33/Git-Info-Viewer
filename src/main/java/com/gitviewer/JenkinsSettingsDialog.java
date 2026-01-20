@@ -26,11 +26,13 @@ public class JenkinsSettingsDialog extends JDialog {
         setLayout(new BorderLayout(10, 10));
         setSize(650, 400);
         setResizable(false);
+        getContentPane().setBackground(Color.WHITE);
 
         // 主面板
         JPanel mainPanel = new JPanel();
         mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
         mainPanel.setBorder(BorderFactory.createEmptyBorder(20, 30, 10, 30));
+        mainPanel.setBackground(Color.WHITE);
 
         // 标题
         JLabel titleLabel = new JLabel("Jenkins Server Configuration");
@@ -58,6 +60,7 @@ public class JenkinsSettingsDialog extends JDialog {
         // 创建输入表单面板
         JPanel formPanel = new JPanel(new GridBagLayout());
         formPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        formPanel.setBackground(Color.WHITE);
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
@@ -135,23 +138,42 @@ public class JenkinsSettingsDialog extends JDialog {
         mainPanel.add(Box.createVerticalStrut(20));
 
         // 按钮面板
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 15));
+        buttonPanel.setBackground(Color.WHITE);
         
-        // Test Connection 按钮
+        // Test Connection 按钮 - 橙色
         JButton testButton = new JButton("Test Connection");
-        testButton.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        testButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        testButton.setPreferredSize(new Dimension(150, 35));
+        testButton.setBackground(new Color(251, 140, 0));
+        testButton.setForeground(Color.WHITE);
+        testButton.setFocusPainted(false);
+        testButton.setBorderPainted(false);
+        testButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         testButton.addActionListener(this::testConnection);
         buttonPanel.add(testButton);
 
-        // Save 按钮
+        // Save 按钮 - 蓝色
         JButton saveButton = new JButton("Save");
-        saveButton.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        saveButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        saveButton.setPreferredSize(new Dimension(100, 35));
+        saveButton.setBackground(new Color(66, 133, 244));
+        saveButton.setForeground(Color.WHITE);
+        saveButton.setFocusPainted(false);
+        saveButton.setBorderPainted(false);
+        saveButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         saveButton.addActionListener(this::saveSettings);
         buttonPanel.add(saveButton);
 
-        // Cancel 按钮
+        // Cancel 按钮 - 灰色
         JButton cancelButton = new JButton("Cancel");
-        cancelButton.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        cancelButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        cancelButton.setPreferredSize(new Dimension(100, 35));
+        cancelButton.setBackground(new Color(95, 99, 104));
+        cancelButton.setForeground(Color.WHITE);
+        cancelButton.setFocusPainted(false);
+        cancelButton.setBorderPainted(false);
+        cancelButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         cancelButton.addActionListener(e -> dispose());
         buttonPanel.add(cancelButton);
 
