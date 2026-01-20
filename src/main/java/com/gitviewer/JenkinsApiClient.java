@@ -880,7 +880,10 @@ public class JenkinsApiClient {
      * @return Portal API URL，如果未找到返回 null
      */
     private String extractPortalUrl(String stageLog) {
+        System.out.println("[JenkinsApiClient] ========================================");
+        System.out.println("[JenkinsApiClient] VERSION: 2026-01-20-16:30 - Portal URL Query Params Fix");
         System.out.println("[JenkinsApiClient] Extracting Portal URL from stage log (line by line)...");
+        System.out.println("[JenkinsApiClient] ========================================");
         
         if (stageLog == null || stageLog.isEmpty()) {
             System.out.println("[JenkinsApiClient] Stage log is null or empty");
@@ -897,38 +900,56 @@ public class JenkinsApiClient {
         // 2. curl ... "https://portal-gw.insuremo.com/..." ... (双引号包围)
         // 3. curl ... https://portal-gw.insuremo.com/... ... (无引号)
         
-        // 尝试三种模式
+        // 尝试两种模式
         Pattern quotedPattern = Pattern.compile("['\"]https://portal-gw\\.insuremo\\.com/[^'\"]*['\"]");
         Pattern unquotedPattern = Pattern.compile("https://portal-gw\\.insuremo\\.com/\\S+");
+        
+        System.out.println("[JenkinsApiClient] Quoted pattern: " + quotedPattern.pattern());
+        System.out.println("[JenkinsApiClient] Unquoted pattern: " + unquotedPattern.pattern());
         
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
             
             // 只处理包含 curl 和 portal-gw 的行
             if (line.contains("curl") && line.contains("portal-gw.insuremo.com")) {
-                System.out.println("[JenkinsApiClient] Found potential Portal URL line " + (i + 1) + ": " + line.substring(0, Math.min(150, line.length())));
+                System.out.println("[JenkinsApiClient] ----------------------------------------");
+                System.out.println("[JenkinsApiClient] Found potential Portal URL line " + (i + 1));
+                System.out.println("[JenkinsApiClient] Line content: " + line);
+                System.out.println("[JenkinsApiClient] ----------------------------------------");
                 
                 // 先尝试匹配带引号的 URL
+                System.out.println("[JenkinsApiClient] Trying quoted pattern...");
                 Matcher quotedMatcher = quotedPattern.matcher(line);
                 if (quotedMatcher.find()) {
                     String urlWithQuotes = quotedMatcher.group(0);
+                    System.out.println("[JenkinsApiClient] Quoted match found: " + urlWithQuotes);
                     // 移除引号
                     String url = urlWithQuotes.substring(1, urlWithQuotes.length() - 1);
-                    System.out.println("[JenkinsApiClient] ✓ Extracted Portal URL (quoted): " + url);
+                    System.out.println("[JenkinsApiClient] ✓✓✓ EXTRACTED Portal URL (quoted): " + url);
+                    System.out.println("[JenkinsApiClient] URL length: " + url.length());
+                    System.out.println("[JenkinsApiClient] ========================================");
                     return url;
+                } else {
+                    System.out.println("[JenkinsApiClient] No quoted match found");
                 }
                 
                 // 如果没有找到带引号的，尝试匹配不带引号的
+                System.out.println("[JenkinsApiClient] Trying unquoted pattern...");
                 Matcher unquotedMatcher = unquotedPattern.matcher(line);
                 if (unquotedMatcher.find()) {
                     String url = unquotedMatcher.group(0);
-                    System.out.println("[JenkinsApiClient] ✓ Extracted Portal URL (unquoted): " + url);
+                    System.out.println("[JenkinsApiClient] ✓✓✓ EXTRACTED Portal URL (unquoted): " + url);
+                    System.out.println("[JenkinsApiClient] URL length: " + url.length());
+                    System.out.println("[JenkinsApiClient] ========================================");
                     return url;
+                } else {
+                    System.out.println("[JenkinsApiClient] No unquoted match found");
                 }
             }
         }
         
-        System.out.println("[JenkinsApiClient] ✗ No Portal URL found in any line");
+        System.out.println("[JenkinsApiClient] ✗✗✗ No Portal URL found in any line");
+        System.out.println("[JenkinsApiClient] ========================================");
         return null;
     }
     

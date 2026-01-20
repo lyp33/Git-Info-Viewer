@@ -408,6 +408,12 @@ public class GitViewerApp extends JFrame {
     }
 
     public static void main(String[] args) {
+        // 打印版本信息
+        System.out.println("========================================");
+        System.out.println("Git Info Viewer - Version 2026-01-20-16:30");
+        System.out.println("Build: Portal URL Query Params Fix");
+        System.out.println("========================================");
+        
         // 设置系统外观
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
