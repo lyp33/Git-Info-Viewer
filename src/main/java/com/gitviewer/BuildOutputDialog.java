@@ -28,6 +28,7 @@ public class BuildOutputDialog extends JDialog {
     private String token;
     private String buildId;
     private String appName;
+    private boolean useBuildStart;  // 是否使用 check_status API
     
     // 搜索相关
     private JPanel searchPanel;
@@ -48,6 +49,22 @@ public class BuildOutputDialog extends JDialog {
      */
     public BuildOutputDialog(Window parent, PortalApiClient apiClient, 
                             String tenantCode, String token, String buildId, String appName) {
+        this(parent, apiClient, tenantCode, token, buildId, appName, false);
+    }
+    
+    /**
+     * 构造函数（支持指定API类型）
+     * 
+     * @param parent 父窗口
+     * @param apiClient API客户端
+     * @param tenantCode 租户代码
+     * @param token 认证Token
+     * @param buildId 构建记录ID
+     * @param appName 应用名称（用于标题显示）
+     * @param useBuildStart 是否使用 check_status API（true表示Build Start状态）
+     */
+    public BuildOutputDialog(Window parent, PortalApiClient apiClient, 
+                            String tenantCode, String token, String buildId, String appName, boolean useBuildStart) {
         super(parent, "Build Output: " + appName, Dialog.ModalityType.MODELESS);
         
         this.apiClient = apiClient;
@@ -55,8 +72,10 @@ public class BuildOutputDialog extends JDialog {
         this.token = token;
         this.buildId = buildId;
         this.appName = appName;
+        this.useBuildStart = useBuildStart;
         
-        logger.info("Opening Build Output Dialog for buildId: {}, app: {}", buildId, appName);
+        logger.info("Opening Build Output Dialog for buildId: {}, app: {}, useBuildStart: {}", 
+                   buildId, appName, useBuildStart);
         
         initializeUI();
         setLocationRelativeTo(parent);
@@ -358,7 +377,7 @@ public class BuildOutputDialog extends JDialog {
      */
     private void loadBuildOutput() {
         logger.info("=== Loading Build Output ===");
-        logger.info("BuildId: {}, TenantCode: {}", buildId, tenantCode);
+        logger.info("BuildId: {}, TenantCode: {}, UseBuildStart: {}", buildId, tenantCode, useBuildStart);
         
         outputTextArea.setText("Loading build output...");
         refreshButton.setEnabled(false);
@@ -370,9 +389,17 @@ public class BuildOutputDialog extends JDialog {
                 
                 BuildOutputInfo info = new BuildOutputInfo();
                 
-                // 构建 API URL（注意：使用 portal-gw.insuremo.com）
-                String url = "https://portal-gw.insuremo.com/eBao/1.0/ops/build/query_one?id=" + 
-                             java.net.URLEncoder.encode(buildId, java.nio.charset.StandardCharsets.UTF_8);
+                // 根据 useBuildStart 标志选择不同的 API
+                String url;
+                if (useBuildStart) {
+                    // Build Start 状态使用 check_status API
+                    url = "https://portal.insuremo.com/api/mo-fo/1.0/ops/build/history/check_status?id=" + 
+                          java.net.URLEncoder.encode(buildId, java.nio.charset.StandardCharsets.UTF_8);
+                } else {
+                    // 其他状态使用 query_one API
+                    url = "https://portal-gw.insuremo.com/eBao/1.0/ops/build/query_one?id=" + 
+                          java.net.URLEncoder.encode(buildId, java.nio.charset.StandardCharsets.UTF_8);
+                }
                 info.apiUrl = url;
                 
                 logger.info("[BuildOutputDialog] API URL: {}", url);
@@ -383,6 +410,7 @@ public class BuildOutputDialog extends JDialog {
                 // 发布 API 信息到 UI
                 StringBuilder apiInfo = new StringBuilder();
                 apiInfo.append("=== API Request Info ===\n\n");
+                apiInfo.append("API Type: ").append(useBuildStart ? "check_status (Build Start)" : "query_one").append("\n");
                 apiInfo.append("URL:\n").append(url).append("\n\n");
                 apiInfo.append("Headers:\n");
                 apiInfo.append("  x-mo-target-tenant: ").append(tenantCode).append("\n");
@@ -396,7 +424,7 @@ public class BuildOutputDialog extends JDialog {
                 
                 // 调用 API
                 try {
-                    String output = apiClient.getBuildOutputById(tenantCode, token, buildId);
+                    String output = apiClient.getBuildOutputById(tenantCode, token, buildId, useBuildStart);
                     logger.info("[BuildOutputDialog] Build output received, length: {}", 
                                output != null ? output.length() : 0);
                     info.buildOutput = output;

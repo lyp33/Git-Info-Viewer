@@ -225,18 +225,41 @@ public class PortalApiClient {
      * @throws IOException 网络错误或API错误
      */
     public String getBuildOutputById(String tenantCode, String token, String buildId) throws IOException {
+        return getBuildOutputById(tenantCode, token, buildId, false);
+    }
+    
+    /**
+     * 根据ID查询单个构建记录（支持指定API类型）
+     * Query single build record by ID (with API type selection)
+     * 
+     * @param tenantCode 租户代码
+     * @param token 认证Token
+     * @param buildId 构建记录ID
+     * @param useBuildStart 是否使用 check_status API（true表示Build Start状态）
+     * @return 构建输出内容
+     * @throws IOException 网络错误或API错误
+     */
+    public String getBuildOutputById(String tenantCode, String token, String buildId, boolean useBuildStart) throws IOException {
         logger.info("=== Getting Build Output by ID ===");
-        logger.info("TenantCode: {}, BuildId: {}", tenantCode, buildId);
+        logger.info("TenantCode: {}, BuildId: {}, UseBuildStart: {}", tenantCode, buildId, useBuildStart);
         
-        // 注意：此API使用 portal-gw.insuremo.com（带 -gw 后缀）
-        String url = "https://portal-gw.insuremo.com/eBao/1.0/ops/build/query_one?id=" + 
-                     java.net.URLEncoder.encode(buildId, StandardCharsets.UTF_8);
+        // 根据 useBuildStart 标志选择不同的 API
+        String url;
+        if (useBuildStart) {
+            // Build Start 状态使用 check_status API
+            url = "https://portal.insuremo.com/api/mo-fo/1.0/ops/build/history/check_status?id=" + 
+                  java.net.URLEncoder.encode(buildId, StandardCharsets.UTF_8);
+        } else {
+            // 其他状态使用 query_one API（注意：使用 portal-gw.insuremo.com）
+            url = "https://portal-gw.insuremo.com/eBao/1.0/ops/build/query_one?id=" + 
+                  java.net.URLEncoder.encode(buildId, StandardCharsets.UTF_8);
+        }
         
         logger.info("Full URL: {}", url);
         
         // 构建请求头
         Map<String, String> headers = new HashMap<>();
-        headers.put("x-mo-target-tenant", tenantCode);
+        headers.put("x-mo-targeenant", tenantCode);
         headers.put("authorization", "Bearer " + token);
         headers.put("Accept", "application/json");
         
@@ -761,29 +784,96 @@ public class PortalApiClient {
     private BuildResult parseBuildResultFromJson(JSONObject json) {
         BuildResult buildResult = new BuildResult();
         
-        // 提取 id 字段
-        buildResult.setId(json.optString("id", ""));
-        buildResult.setAppName(json.optString("app_name", ""));
-        buildResult.setImageName(json.optString("image_name", ""));
-        buildResult.setCreateTime(json.optString("create_time", ""));
+        // ========== 详细日志：输出完整的原始 JSON ==========
+        System.out.println("========================================");
+        System.out.println("=== parseBuildResultFromJson: RAW JSON ===");
+        System.out.println("========================================");
+        System.out.println(json.toString(2));  // 格式化输出，缩进2个空格
+        System.out.println("========================================");
+        
+        // 存储原始JSON数据
+        // Store raw JSON data for tooltip display
+        String rawJsonString = json.toString();
+        buildResult.setRawJsonData(rawJsonString);
+        System.out.println("Raw JSON stored, length: " + rawJsonString.length());
+        
+        // 提取基本字段
+        String id = json.optString("id", "");
+        buildResult.setId(id);
+        System.out.println("Extracted id: [" + id + "]");
+        
+        // Queue ID - 处理可能不存在的情况
+        long queueIdLong = json.optLong("queue_id", 0);
+        String queueId = "";
+        if (queueIdLong > 0) {
+            queueId = String.valueOf(queueIdLong);
+            buildResult.setQueueId(queueId);
+        } else {
+            buildResult.setQueueId("");
+        }
+        System.out.println("Extracted queue_id: [" + queueId + "] (raw long: " + queueIdLong + ")");
+        
+        String appName = json.optString("app_name", "");
+        buildResult.setAppName(appName);
+        System.out.println("Extracted app_name: [" + appName + "]");
+        
+        String imageName = json.optString("image_name", "");
+        buildResult.setImageName(imageName);
+        System.out.println("Extracted image_name: [" + imageName + "]");
+        
+        String createTime = json.optString("create_time", "");
+        buildResult.setCreateTime(createTime);
+        System.out.println("Extracted create_time: [" + createTime + "]");
+        
+        String modifyTime = json.optString("modify_time", "");
+        buildResult.setModifyTime(modifyTime);
+        System.out.println("Extracted modify_time: [" + modifyTime + "]");
+        
+        String creator = json.optString("creator", "");
+        buildResult.setCreator(creator);
+        System.out.println("Extracted creator: [" + creator + "]");
+        
+        String packageTitle = json.optString("package_title", "");
+        buildResult.setPackageTitle(packageTitle);
+        System.out.println("Extracted package_title: [" + packageTitle + "]");
         
         // 从callback节点获取build_status
         JSONObject callback = json.optJSONObject("callback");
+        String buildStatus = "Unknown";
         if (callback != null) {
-            buildResult.setBuildStatus(callback.optString("build_status", "Unknown"));
+            buildStatus = callback.optString("build_status", "Unknown");
+            buildResult.setBuildStatus(buildStatus);
+            System.out.println("Extracted build_status from callback: [" + buildStatus + "]");
         } else {
             buildResult.setBuildStatus("Unknown");
+            System.out.println("No callback object found, build_status set to: Unknown");
         }
         
         // 从request_parameters节点获取version和git_branch
         JSONObject requestParams = json.optJSONObject("request_parameters");
         if (requestParams != null) {
-            buildResult.setVersion(requestParams.optString("version", ""));
-            buildResult.setGitBranch(requestParams.optString("git_branch", ""));
+            String version = requestParams.optString("version", "");
+            String gitBranch = requestParams.optString("git_branch", "");
+            buildResult.setVersion(version);
+            buildResult.setGitBranch(gitBranch);
+            System.out.println("Extracted version from request_parameters: [" + version + "]");
+            System.out.println("Extracted git_branch from request_parameters: [" + gitBranch + "]");
+        } else {
+            System.out.println("No request_parameters object found");
         }
         
-        logger.debug("Parsed build result: id={}, app={}, status={}", 
-                    buildResult.getId(), buildResult.getAppName(), buildResult.getBuildStatus());
+        // 汇总日志输出
+        System.out.println("========================================");
+        System.out.println("=== SUMMARY ===");
+        System.out.println("  id: " + buildResult.getId());
+        System.out.println("  queueId: " + buildResult.getQueueId());
+        System.out.println("  appName: " + buildResult.getAppName());
+        System.out.println("  creator: " + buildResult.getCreator());
+        System.out.println("  packageTitle: " + buildResult.getPackageTitle());
+        System.out.println("  createTime: " + buildResult.getCreateTime());
+        System.out.println("  modifyTime: " + buildResult.getModifyTime());
+        System.out.println("  buildStatus: " + buildResult.getBuildStatus());
+        System.out.println("========================================");
         
         return buildResult;
     }
@@ -825,5 +915,99 @@ public class PortalApiClient {
             return "(Unexpected error)\n\nError: " + e.getMessage() + 
                    "\n\nRaw response:\n" + response;
         }
+    }
+    
+    /**
+     * 获取租户配置（包含分支列表）
+     * Get tenant configuration including branch list
+     * 
+     * @param tenantCode 租户代码
+     * @param token 认证Token
+     * @return TenantConfig对象
+     * @throws IOException 网络错误或API错误
+     */
+    public TenantConfig getTenantConfiguration(String tenantCode, String token) throws IOException {
+        logger.info("=== Getting Tenant Configuration ===");
+        logger.info("TenantCode: {}", tenantCode);
+        
+        String url = BASE_URL + "/api/mo-fo/1.0/ops/tenantconfig";
+        
+        // 构建请求头
+        Map<String, String> headers = new HashMap<>();
+        headers.put("x-mo-target-tenant", tenantCode);
+        headers.put("authorization", "Bearer " + token);
+        headers.put("Accept", "application/json");
+        
+        // 发送请求
+        String response = sendGetRequest(url, headers);
+        
+        // 解析响应
+        return parseTenantConfig(response);
+    }
+    
+    /**
+     * 提交多应用构建请求
+     * Submit multi-application build request
+     * 
+     * @param tenantCode 租户代码
+     * @param token 认证Token
+     * @param requestBody JSON请求体
+     * @throws IOException 网络错误或API错误
+     */
+    public void submitMultiBuild(String tenantCode, String token, String requestBody) throws IOException {
+        logger.info("=== Submitting Multi-Build Request ===");
+        logger.info("TenantCode: {}", tenantCode);
+        
+        String url = BASE_URL + "/api/mo-fo/1.0/ops/multi_build";
+        
+        // 构建请求头
+        Map<String, String> headers = new HashMap<>();
+        headers.put("x-mo-target-tenant", tenantCode);
+        headers.put("authorization", "Bearer " + token);
+        headers.put("Content-Type", "application/json");
+        
+        // 发送请求
+        String response = sendPostRequest(url, headers, requestBody);
+        
+        logger.info("Multi-build request submitted successfully");
+    }
+    
+    /**
+     * 解析租户配置响应
+     * Parse tenant configuration response
+     * 
+     * @param response JSON响应字符串
+     * @return TenantConfig对象
+     */
+    private TenantConfig parseTenantConfig(String response) {
+        logger.debug("Parsing tenant configuration response");
+        
+        TenantConfig config = new TenantConfig();
+        
+        try {
+            JSONObject json = new JSONObject(response);
+            
+            config.setId(json.optString("id", ""));
+            config.setUserName(json.optString("user_name", ""));
+            config.setDefaultBranch(json.optString("default_branch", ""));
+            
+            // 解析分支列表
+            JSONArray branchArray = json.optJSONArray("branch_list");
+            if (branchArray != null) {
+                List<String> branches = new ArrayList<>();
+                for (int i = 0; i < branchArray.length(); i++) {
+                    branches.add(branchArray.getString(i));
+                }
+                config.setBranchList(branches);
+                logger.info("Loaded {} branches for tenant {}", branches.size(), config.getUserName());
+            } else {
+                logger.warn("No branch_list found in response");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to parse tenant configuration response", e);
+            throw new RuntimeException("Failed to parse tenant configuration: " + e.getMessage(), e);
+        }
+        
+        return config;
     }
 }

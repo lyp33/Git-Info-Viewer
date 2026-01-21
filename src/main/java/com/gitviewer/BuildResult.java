@@ -16,24 +16,37 @@ public class BuildResult {
     private static final Logger logger = LoggerFactory.getLogger(BuildResult.class);
     
     private String id;  // Build record ID from Portal API
+    private String queueId;  // Queue ID from Portal API
     private String appName;
     private String imageName;
     private String buildStatus;
     private String createTime;
+    private String modifyTime;  // Modify time from Portal API
     private String version;
     private String gitBranch;
+    private String creator;  // Creator from Portal API
+    private String packageTitle;  // Package title from Portal API
+    
+    // 存储原始JSON数据，用于tooltip显示
+    // Store raw JSON data for tooltip display
+    private String rawJsonData;
     
     /**
      * 构造函数 - 使用null-safe默认值
      */
     public BuildResult() {
         this.id = "";
+        this.queueId = "";
         this.appName = "";
         this.imageName = "";
         this.buildStatus = "Unknown";
         this.createTime = "";
+        this.modifyTime = "";
         this.version = "";
         this.gitBranch = "";
+        this.creator = "";
+        this.packageTitle = "";
+        this.rawJsonData = "";
     }
     
     // Getters with null checks
@@ -93,6 +106,46 @@ public class BuildResult {
         this.gitBranch = gitBranch;
     }
     
+    public String getQueueId() {
+        return queueId != null ? queueId : "";
+    }
+    
+    public void setQueueId(String queueId) {
+        this.queueId = queueId;
+    }
+    
+    public String getModifyTime() {
+        return modifyTime != null ? modifyTime : "";
+    }
+    
+    public void setModifyTime(String modifyTime) {
+        this.modifyTime = modifyTime;
+    }
+    
+    public String getCreator() {
+        return creator != null ? creator : "";
+    }
+    
+    public void setCreator(String creator) {
+        this.creator = creator;
+    }
+    
+    public String getPackageTitle() {
+        return packageTitle != null ? packageTitle : "";
+    }
+    
+    public void setPackageTitle(String packageTitle) {
+        this.packageTitle = packageTitle;
+    }
+    
+    public String getRawJsonData() {
+        return rawJsonData != null ? rawJsonData : "";
+    }
+    
+    public void setRawJsonData(String rawJsonData) {
+        this.rawJsonData = rawJsonData;
+    }
+    
     /**
      * 格式化创建时间用于显示
      * 将 ISO 8601 格式转换为可读格式
@@ -120,16 +173,46 @@ public class BuildResult {
         }
     }
     
+    /**
+     * 格式化修改时间用于显示
+     * 将 ISO 8601 格式转换为可读格式
+     * 
+     * @return 格式化后的时间字符串，如果解析失败则返回原始字符串
+     */
+    public String getFormattedModifyTime() {
+        if (modifyTime == null || modifyTime.isEmpty()) {
+            return "";
+        }
+        
+        try {
+            // 解析 ISO 8601 格式
+            SimpleDateFormat isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+            isoFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+            Date date = isoFormat.parse(modifyTime);
+            
+            // 格式化为显示格式
+            SimpleDateFormat displayFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            return displayFormat.format(date);
+        } catch (ParseException e) {
+            logger.warn("Failed to parse modify time: {}", modifyTime);
+            return modifyTime;  // 解析失败时返回原始值
+        }
+    }
+    
     @Override
     public String toString() {
         return "BuildResult{" +
                 "id='" + id + '\'' +
+                ", queueId='" + queueId + '\'' +
                 ", appName='" + appName + '\'' +
                 ", imageName='" + imageName + '\'' +
                 ", buildStatus='" + buildStatus + '\'' +
                 ", createTime='" + createTime + '\'' +
+                ", modifyTime='" + modifyTime + '\'' +
                 ", version='" + version + '\'' +
                 ", gitBranch='" + gitBranch + '\'' +
+                ", creator='" + creator + '\'' +
+                ", packageTitle='" + packageTitle + '\'' +
                 '}';
     }
 }

@@ -17,7 +17,9 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.TimeZone;
 import java.util.stream.Collectors;
+import org.json.JSONObject;
 
 /**
  * Tenant CI/CD主对话框
@@ -58,6 +60,8 @@ public class TenantCICDDialog extends JDialog {
     private String currentTenant;
     private List<String> allAppNames;  // 缓存用于过滤
     private List<String> filteredAppNames;  // 过滤后的应用名称
+    private List<BuildResult> allResults;  // 存储所有查询结果
+    private String currentBranchFilter;  // 当前的分支过滤器
     
     // SwingWorker引用，用于取消操作
     private SwingWorker<?, ?> currentWorker;
@@ -71,6 +75,10 @@ public class TenantCICDDialog extends JDialog {
     // 防抖Timer，用于延迟过滤
     private javax.swing.Timer filterTimer;
     
+    // Hover tooltip相关
+    private javax.swing.Timer hoverTimer;
+    private int lastHoverRow = -1;
+    
     /**
      * 构造函数
      * 
@@ -83,6 +91,8 @@ public class TenantCICDDialog extends JDialog {
         this.apiClient = new PortalApiClient();
         this.allAppNames = new ArrayList<>();
         this.filteredAppNames = new ArrayList<>();
+        this.allResults = new ArrayList<>();
+        this.currentBranchFilter = null;
         this.tableModel = new BuildResultTableModel();
         
         initializeUI();
@@ -346,6 +356,9 @@ public class TenantCICDDialog extends JDialog {
         // 设置Build Status列的渲染器（颜色编码）
         resultsTable.getColumnModel().getColumn(2).setCellRenderer(new BuildStatusCellRenderer());
         
+        // 为Git Branch列添加过滤图标
+        addBranchFilterIcon();
+        
         // 添加 Ctrl+C 复制功能
         resultsTable.addKeyListener(new KeyAdapter() {
             @Override
@@ -368,6 +381,9 @@ public class TenantCICDDialog extends JDialog {
                 }
             }
         });
+        
+        // 添加鼠标移动监听器 - 显示悬停提示
+        setupHoverTooltip();
         
         tableScrollPane = new JScrollPane(resultsTable);
         panel.add(tableScrollPane, BorderLayout.CENTER);
@@ -440,6 +456,279 @@ public class TenantCICDDialog extends JDialog {
         panel.add(closeButton);
         
         return panel;
+    }
+    
+    /**
+     * 设置悬停提示功能
+     * Setup hover tooltip for table rows
+     */
+    private void setupHoverTooltip() {
+        // 创建1秒延迟的Timer
+        hoverTimer = new javax.swing.Timer(1000, e -> {
+            if (lastHoverRow >= 0) {
+                showRowTooltip(lastHoverRow);
+            }
+        });
+        hoverTimer.setRepeats(false);
+        
+        // 添加鼠标移动监听器
+        resultsTable.addMouseMotionListener(new java.awt.event.MouseMotionAdapter() {
+            @Override
+            public void mouseMoved(java.awt.event.MouseEvent e) {
+                int row = resultsTable.rowAtPoint(e.getPoint());
+                
+                if (row != lastHoverRow) {
+                    // 鼠标移动到不同的行，重置Timer
+                    lastHoverRow = row;
+                    hoverTimer.restart();
+                    
+                    // 清除现有的tooltip
+                    resultsTable.setToolTipText(null);
+                }
+            }
+        });
+        
+        // 添加鼠标退出监听器
+        resultsTable.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                // 鼠标离开表格，停止Timer并清除tooltip
+                hoverTimer.stop();
+                lastHoverRow = -1;
+                resultsTable.setToolTipText(null);
+            }
+        });
+    }
+    
+    /**
+     * 显示行的详细信息提示
+     * Show detailed tooltip for a table row
+     */
+    private void showRowTooltip(int viewRow) {
+        if (viewRow < 0) {
+            return;
+        }
+        
+        System.out.println("========================================");
+        System.out.println("=== TOOLTIP: showRowTooltip called ===");
+        System.out.println("  viewRow: " + viewRow);
+        
+        try {
+            // 转换为模型行索引
+            int modelRow = resultsTable.convertRowIndexToModel(viewRow);
+            System.out.println("  modelRow: " + modelRow);
+            
+            // 获取构建结果
+            List<BuildResult> results = tableModel.getResults();
+            System.out.println("  Total results: " + results.size());
+            
+            if (modelRow < 0 || modelRow >= results.size()) {
+                System.out.println("  ERROR: modelRow out of bounds");
+                return;
+            }
+            
+            BuildResult result = results.get(modelRow);
+            System.out.println("  BuildResult retrieved");
+            
+            // 从原始JSON中提取字段
+            // Extract fields directly from raw JSON to ensure accuracy
+            String id = "";
+            String queueId = "";
+            String appName = "";
+            String creator = "";
+            String packageTitle = "";
+            String createTime = "";
+            String modifyTime = "";
+            String imageName = "";
+            
+            try {
+                String rawJson = result.getRawJsonData();
+                System.out.println("  Raw JSON length: " + (rawJson != null ? rawJson.length() : 0));
+                
+                if (rawJson != null && !rawJson.isEmpty()) {
+                    System.out.println("========================================");
+                    System.out.println("=== TOOLTIP: RAW JSON FROM BuildResult ===");
+                    System.out.println(rawJson);
+                    System.out.println("========================================");
+                    
+                    JSONObject json = new JSONObject(rawJson);
+                    System.out.println("  JSON parsed successfully");
+                    
+                    id = json.optString("id", "");
+                    System.out.println("  Extracted id: [" + id + "]");
+                    
+                    // Queue ID
+                    long queueIdLong = json.optLong("queue_id", 0);
+                    if (queueIdLong > 0) {
+                        queueId = String.valueOf(queueIdLong);
+                    }
+                    System.out.println("  Extracted queue_id: [" + queueId + "]");
+                    
+                    appName = json.optString("app_name", "");
+                    System.out.println("  Extracted app_name: [" + appName + "]");
+                    
+                    creator = json.optString("creator", "");
+                    System.out.println("  Extracted creator: [" + creator + "]");
+                    
+                    packageTitle = json.optString("package_title", "");
+                    System.out.println("  Extracted package_title: [" + packageTitle + "]");
+                    
+                    imageName = json.optString("image_name", "");
+                    System.out.println("  Extracted image_name: [" + imageName + "]");
+                    
+                    // 格式化时间
+                    String rawCreateTime = json.optString("create_time", "");
+                    System.out.println("  Raw create_time: [" + rawCreateTime + "]");
+                    createTime = formatTime(rawCreateTime);
+                    System.out.println("  Formatted create_time: [" + createTime + "]");
+                    
+                    String rawModifyTime = json.optString("modify_time", "");
+                    System.out.println("  Raw modify_time: [" + rawModifyTime + "]");
+                    modifyTime = formatTime(rawModifyTime);
+                    System.out.println("  Formatted modify_time: [" + modifyTime + "]");
+                    
+                    // 输出调试信息
+                    String logMsg = "Tooltip data from raw JSON: id=" + id + 
+                                   ", queueId=" + queueId + 
+                                   ", creator=" + creator + 
+                                   ", packageTitle=" + packageTitle;
+                    System.out.println(logMsg);
+                    logger.debug(logMsg);
+                } else {
+                    // 如果没有原始JSON，使用BuildResult对象的字段
+                    System.out.println("  WARNING: No raw JSON data, using BuildResult fields");
+                    logger.warn("No raw JSON data, using BuildResult fields");
+                    id = result.getId();
+                    queueId = result.getQueueId();
+                    appName = result.getAppName();
+                    creator = result.getCreator();
+                    packageTitle = result.getPackageTitle();
+                    createTime = result.getFormattedCreateTime();
+                    modifyTime = result.getFormattedModifyTime();
+                    imageName = result.getImageName();
+                    
+                    System.out.println("  From BuildResult - creator: [" + creator + "]");
+                    System.out.println("  From BuildResult - packageTitle: [" + packageTitle + "]");
+                }
+            } catch (Exception e) {
+                System.out.println("  ERROR: Failed to parse raw JSON");
+                e.printStackTrace();
+                logger.error("Failed to parse raw JSON, using BuildResult fields", e);
+                // 回退到使用BuildResult对象的字段
+                id = result.getId();
+                queueId = result.getQueueId();
+                appName = result.getAppName();
+                creator = result.getCreator();
+                packageTitle = result.getPackageTitle();
+                createTime = result.getFormattedCreateTime();
+                modifyTime = result.getFormattedModifyTime();
+                imageName = result.getImageName();
+            }
+            
+            System.out.println("========================================");
+            System.out.println("=== TOOLTIP: FINAL VALUES ===");
+            System.out.println("  ID: " + id);
+            System.out.println("  Queue ID: " + queueId);
+            System.out.println("  App Name: " + appName);
+            System.out.println("  Creator: " + creator);
+            System.out.println("  Package Title: " + packageTitle);
+            System.out.println("  Create Time: " + createTime);
+            System.out.println("  Modify Time: " + modifyTime);
+            System.out.println("  Image Name: " + imageName);
+            System.out.println("========================================");
+            
+            // 构建HTML格式的tooltip
+            StringBuilder tooltip = new StringBuilder("<html><body style='width: 500px; padding: 8px;'>");
+            tooltip.append("<table cellpadding='2' cellspacing='0' style='font-family: Microsoft YaHei UI; font-size: 9px;'>");
+            
+            // 添加详细信息
+            addTooltipRow(tooltip, "ID", id);
+            addTooltipRow(tooltip, "Queue ID", queueId);
+            addTooltipRow(tooltip, "App Name", appName);
+            addTooltipRow(tooltip, "Creator", creator);
+            addTooltipRow(tooltip, "Package Title", packageTitle);
+            addTooltipRow(tooltip, "Create Time", createTime);
+            addTooltipRow(tooltip, "Modify Time", modifyTime);
+            addTooltipRow(tooltip, "Image Name", imageName);
+            
+            tooltip.append("</table>");
+            tooltip.append("</body></html>");
+            
+            // 设置tooltip
+            resultsTable.setToolTipText(tooltip.toString());
+            
+            logger.debug("Showing tooltip for row {}: id={}", viewRow, id);
+        } catch (Exception e) {
+            System.out.println("  FATAL ERROR in showRowTooltip");
+            e.printStackTrace();
+            logger.error("Failed to show tooltip", e);
+        }
+    }
+    
+    /**
+     * 格式化时间
+     * Format time from ISO 8601 to readable format
+     */
+    private String formatTime(String isoTime) {
+        if (isoTime == null || isoTime.isEmpty() || isoTime.equals("0001-01-01T00:00:00Z")) {
+            return "";
+        }
+        
+        try {
+            SimpleDateFormat isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+            isoFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+            Date date = isoFormat.parse(isoTime);
+            
+            SimpleDateFormat displayFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            return displayFormat.format(date);
+        } catch (Exception e) {
+            // 尝试不带毫秒的格式
+            try {
+                SimpleDateFormat isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+                isoFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+                Date date = isoFormat.parse(isoTime);
+                
+                SimpleDateFormat displayFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                return displayFormat.format(date);
+            } catch (Exception ex) {
+                logger.warn("Failed to parse time: {}", isoTime);
+                return isoTime;
+            }
+        }
+    }
+    
+    /**
+     * 添加tooltip行
+     * Add a row to the tooltip table
+     */
+    private void addTooltipRow(StringBuilder tooltip, String label, String value) {
+        if (value == null || value.isEmpty()) {
+            value = "-";
+        }
+        
+        tooltip.append("<tr>");
+        tooltip.append("<td style='font-weight: bold; color: #5f6368; padding-right: 10px; white-space: nowrap;'>")
+               .append(label)
+               .append(":</td>");
+        tooltip.append("<td style='color: #202124; word-wrap: break-word;'>")
+               .append(escapeHtml(value))
+               .append("</td>");
+        tooltip.append("</tr>");
+    }
+    
+    /**
+     * HTML转义
+     * Escape HTML special characters
+     */
+    private String escapeHtml(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replace("&", "&amp;")
+                   .replace("<", "&lt;")
+                   .replace(">", "&gt;")
+                   .replace("\"", "&quot;")
+                   .replace("'", "&#39;");
     }
 
     /**
@@ -837,12 +1126,158 @@ public class TenantCICDDialog extends JDialog {
     }
 
     /**
+     * 添加分支过滤图标到表头
+     * Add branch filter icon to table header
+     */
+    private void addBranchFilterIcon() {
+        // 获取Git Branch列的表头
+        TableColumn branchColumn = resultsTable.getColumnModel().getColumn(5);
+        
+        // 创建带图标的表头渲染器
+        branchColumn.setHeaderRenderer((table, value, isSelected, hasFocus, row, column) -> {
+            JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+            headerPanel.setBackground(new Color(248, 249, 250));
+            headerPanel.setBorder(BorderFactory.createEmptyBorder(0, 5, 0, 5));
+            
+            JLabel textLabel = new JLabel(value.toString());
+            textLabel.setFont(new Font("Segoe UI", Font.BOLD, 11));
+            textLabel.setForeground(new Color(60, 64, 67));
+            headerPanel.add(textLabel);
+            
+            // 创建过滤图标标签（使用文本而不是emoji）
+            JLabel filterIcon = new JLabel("[F]");
+            filterIcon.setFont(new Font("Segoe UI", Font.BOLD, 10));
+            filterIcon.setToolTipText("Filter by branch");
+            
+            // 如果当前有过滤器，显示不同的颜色
+            if (currentBranchFilter != null) {
+                filterIcon.setForeground(new Color(70, 130, 180));  // 蓝色
+            } else {
+                filterIcon.setForeground(new Color(95, 99, 104));   // 灰色
+            }
+            
+            headerPanel.add(filterIcon);
+            
+            return headerPanel;
+        });
+        
+        // 添加鼠标监听器到表头，处理点击事件
+        resultsTable.getTableHeader().addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                int column = resultsTable.getTableHeader().columnAtPoint(e.getPoint());
+                if (column == 5) {  // Git Branch列
+                    // 检查点击位置是否在图标区域
+                    Rectangle headerRect = resultsTable.getTableHeader().getHeaderRect(column);
+                    int iconX = headerRect.x + headerRect.width - 30;  // 图标大约在右侧30像素内
+                    
+                    if (e.getX() >= iconX) {
+                        handleBranchFilter();
+                    }
+                }
+            }
+        });
+    }
+    
+    /**
+     * 处理分支过滤
+     * Handle branch filter action
+     */
+    private void handleBranchFilter() {
+        logger.info("=== User Action: Branch Filter Icon Clicked ===");
+        
+        // 从所有结果中提取唯一的分支列表
+        List<String> branches = allResults.stream()
+            .map(BuildResult::getGitBranch)
+            .filter(branch -> branch != null && !branch.isEmpty())
+            .distinct()
+            .sorted()
+            .collect(Collectors.toList());
+        
+        if (branches.isEmpty()) {
+            logger.warn("No branches available for filtering");
+            JOptionPane.showMessageDialog(this,
+                "No branches available for filtering.\nPlease perform a search first.",
+                "No Data",
+                JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        
+        logger.info("Opening branch filter dialog with {} unique branches", branches.size());
+        
+        // 显示过滤对话框
+        BranchFilterDialog filterDialog = new BranchFilterDialog(this, branches, currentBranchFilter);
+        filterDialog.setVisible(true);
+        
+        if (filterDialog.isConfirmed()) {
+            String selectedBranch = filterDialog.getSelectedBranch();
+            logger.info("User selected branch filter: {}", selectedBranch);
+            
+            currentBranchFilter = selectedBranch;
+            applyBranchFilter();
+            
+            // 刷新表头以更新图标颜色
+            resultsTable.getTableHeader().repaint();
+        } else {
+            logger.info("User cancelled branch filter");
+        }
+    }
+    
+    /**
+     * 应用分支过滤
+     * Apply branch filter to results
+     */
+    private void applyBranchFilter() {
+        logger.info("=== Applying Branch Filter ===");
+        logger.info("Filter: {}", currentBranchFilter);
+        logger.info("Total results: {}", allResults.size());
+        
+        List<BuildResult> filteredResults;
+        
+        if (currentBranchFilter == null || currentBranchFilter.isEmpty()) {
+            // 没有过滤器，显示所有结果
+            filteredResults = new ArrayList<>(allResults);
+            logger.info("No filter applied, showing all {} results", filteredResults.size());
+        } else {
+            // 应用过滤器
+            filteredResults = allResults.stream()
+                .filter(result -> currentBranchFilter.equals(result.getGitBranch()))
+                .collect(Collectors.toList());
+            logger.info("Filter applied, showing {} of {} results", filteredResults.size(), allResults.size());
+        }
+        
+        // 更新表格
+        tableModel.setResults(filteredResults);
+        
+        // 更新按钮状态
+        boolean hasResults = !filteredResults.isEmpty();
+        downloadCsvButton.setEnabled(hasResults);
+        copyImageNamesButton.setEnabled(hasResults);
+        
+        // 更新状态标签
+        if (hasResults) {
+            String statusText = filteredResults.size() + " results displayed";
+            if (currentBranchFilter != null) {
+                statusText += " (filtered by branch: " + currentBranchFilter + ")";
+            }
+            statusLabel.setText(statusText);
+            statusLabel.setForeground(new Color(0, 128, 0));
+        } else {
+            statusLabel.setText("No results match the filter");
+            statusLabel.setForeground(Color.GRAY);
+        }
+    }
+    
+    /**
      * 显示查询结果
      * Display query results
      */
     private void displayResults(List<BuildResult> results) {
         logger.info("=== Displaying Results ===");
         logger.info("Result count: {}", results.size());
+        
+        // 存储原始结果用于过滤
+        allResults = new ArrayList<>(results);
         
         // 检查大结果集
         if (results.size() > 100) {
@@ -991,10 +1426,39 @@ public class TenantCICDDialog extends JDialog {
     private void handleBuild() {
         logger.info("=== User Action: Build Button Clicked ===");
         
-        JOptionPane.showMessageDialog(this,
-            "Build functionality is not yet implemented.\n\nThis feature will be added in a future update.",
-            "Not Implemented",
-            JOptionPane.INFORMATION_MESSAGE);
+        // 检查连接状态
+        if (currentToken == null || currentToken.isEmpty()) {
+            logger.warn("Build attempted without connection");
+            JOptionPane.showMessageDialog(this,
+                "Please connect to a tenant first",
+                "Not Connected",
+                JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        // 打开Build Package对话框
+        try {
+            BuildPackageDialog dialog = new BuildPackageDialog(
+                (Frame) SwingUtilities.getWindowAncestor(this),
+                apiClient,
+                currentToken,
+                currentTenant,
+                allAppNames.stream()
+                    .map(name -> {
+                        Application app = new Application();
+                        app.setAppName(name);
+                        return app;
+                    })
+                    .collect(java.util.stream.Collectors.toList())
+            );
+            dialog.setVisible(true);
+        } catch (Exception e) {
+            logger.error("Failed to open Build Package dialog", e);
+            JOptionPane.showMessageDialog(this,
+                "Failed to open Build Package dialog:\n" + e.getMessage(),
+                "Error",
+                JOptionPane.ERROR_MESSAGE);
+        }
     }
     
     /**
@@ -1072,6 +1536,13 @@ public class TenantCICDDialog extends JDialog {
             filterTimer.stop();
             filterTimer = null;
             logger.debug("Filter timer stopped");
+        }
+        
+        // 停止并清理hover Timer
+        if (hoverTimer != null) {
+            hoverTimer.stop();
+            hoverTimer = null;
+            logger.debug("Hover timer stopped");
         }
         
         // 移除KeyListener防止内存泄漏
@@ -1176,8 +1647,9 @@ public class TenantCICDDialog extends JDialog {
         BuildResult buildResult = results.get(modelRow);
         String buildId = buildResult.getId();
         String appName = buildResult.getAppName();
+        String buildStatus = buildResult.getBuildStatus();
         
-        logger.info("Opening build output for: buildId={}, app={}", buildId, appName);
+        logger.info("Opening build output for: buildId={}, app={}, status={}", buildId, appName, buildStatus);
         
         // 检查是否有有效的ID
         if (buildId == null || buildId.isEmpty()) {
@@ -1197,10 +1669,13 @@ public class TenantCICDDialog extends JDialog {
             return;
         }
         
+        // 检查构建状态，如果是 "Build Start"，使用 check_status API
+        boolean useBuildStart = "Build Start".equalsIgnoreCase(buildStatus);
+        
         // 打开构建输出对话框
         try {
             BuildOutputDialog dialog = new BuildOutputDialog(
-                this, apiClient, currentTenant, currentToken, buildId, appName);
+                this, apiClient, currentTenant, currentToken, buildId, appName, useBuildStart);
             dialog.setVisible(true);
         } catch (Exception e) {
             logger.error("Failed to open build output dialog", e);

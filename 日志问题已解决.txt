@@ -1,0 +1,86 @@
+========================================
+日志输出问题 - 已解决
+========================================
+
+问题：
+  你说 "SLF4J NOP" 看不到输出
+
+原因：
+  配置是正确的，但是使用了错误的启动方法
+  restart-app.bat 会隐藏控制台窗口
+
+解决方案：
+  使用正确的启动方法
+
+========================================
+现在就试试！
+========================================
+
+1. 打开命令行窗口
+
+2. 运行以下命令：
+   
+   test-logging.bat
+
+3. 应用启动后，点击 "Tenant CI/CD"
+
+4. 点击 "Connect"，你会看到：
+   
+   === Getting Token ===
+   Username: xxx, TenantCode: xxx
+   === POST Request ===
+   URL: https://portal.insuremo.com/cas/get-token
+   ...
+
+5. 输入 plan 名称，点击 "Search"，你会看到：
+   
+   === Getting Plan Names ===
+   TenantCode: xxx
+   === GET Request ===
+   URL: https://portal.insuremo.com/.../title_list
+   ...
+   Parsed 10 plan names
+     Plan[0]: Plan 1
+     Plan[1]: Plan 2
+     ...
+
+6. 双击结果行，你会看到：
+   
+   === Getting Build Output by ID ===
+   TenantCode: xxx, BuildId: 12345
+   Full URL: https://portal-gw.insuremo.com/...
+   ...
+
+========================================
+记住！
+========================================
+
+✅ 要用：
+   - test-logging.bat
+   - run-with-console.bat
+   - java -jar target\git-info-viewer-1.0.0-jar-with-dependencies.jar
+
+❌ 不要用：
+   - restart-app.bat（调试时不要用这个！）
+
+========================================
+详细文档
+========================================
+
+快速参考：快速参考-如何看到日志.txt
+中文详细说明：控制台日志输出说明.md
+英文详细说明：CONSOLE_LOGGING_GUIDE.md
+技术文档：TENANT_CICD_CTRL_C_FIX.md
+
+========================================
+验证工具
+========================================
+
+验证配置：verify-logging-config.bat
+
+========================================
+
+现在运行 test-logging.bat 试试吧！
+你会看到所有的日志输出！
+
+========================================

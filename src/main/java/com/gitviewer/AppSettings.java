@@ -564,4 +564,80 @@ public class AppSettings {
     public void setPortalTenantCodes(List<String> tenantCodes) {
         this.portalTenantCodes = tenantCodes != null ? new ArrayList<>(tenantCodes) : new ArrayList<>();
     }
+    
+    /**
+     * 获取Portal收藏的应用列表（按租户）
+     * Get Portal favorite applications for a specific tenant
+     * 
+     * @param tenantCode 租户代码
+     * @return 收藏的应用名称列表
+     */
+    public List<String> getPortalFavoriteApps(String tenantCode) {
+        if (tenantCode == null || tenantCode.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        Properties props = new Properties();
+        File file = new File(System.getProperty("user.home"), SETTINGS_FILE);
+        
+        if (file.exists()) {
+            try (FileInputStream fis = new FileInputStream(file)) {
+                props.load(fis);
+                String key = "portal.favorites." + tenantCode;
+                String favoritesStr = props.getProperty(key, "");
+                
+                if (favoritesStr.isEmpty()) {
+                    return new ArrayList<>();
+                }
+                
+                // 解析逗号分隔的应用名称
+                return TenantCICDUtils.parseTenantCodes(favoritesStr);
+            } catch (IOException e) {
+                System.err.println("Error loading Portal favorites: " + e.getMessage());
+            }
+        }
+        
+        return new ArrayList<>();
+    }
+    
+    /**
+     * 设置Portal收藏的应用列表（按租户）
+     * Set Portal favorite applications for a specific tenant
+     * 
+     * @param tenantCode 租户代码
+     * @param favoriteApps 收藏的应用名称列表
+     */
+    public void setPortalFavoriteApps(String tenantCode, List<String> favoriteApps) {
+        if (tenantCode == null || tenantCode.isEmpty()) {
+            return;
+        }
+        
+        Properties props = new Properties();
+        File file = new File(System.getProperty("user.home"), SETTINGS_FILE);
+        
+        // 加载现有设置
+        if (file.exists()) {
+            try (FileInputStream fis = new FileInputStream(file)) {
+                props.load(fis);
+            } catch (IOException e) {
+                System.err.println("Error loading settings: " + e.getMessage());
+            }
+        }
+        
+        // 更新收藏列表
+        String key = "portal.favorites." + tenantCode;
+        if (favoriteApps != null && !favoriteApps.isEmpty()) {
+            String favoritesStr = TenantCICDUtils.formatTenantCodes(favoriteApps);
+            props.setProperty(key, favoritesStr);
+        } else {
+            props.remove(key);  // 如果列表为空，移除属性
+        }
+        
+        // 保存设置
+        try (FileOutputStream fos = new FileOutputStream(file)) {
+            props.store(fos, "Git Info Viewer Settings");
+        } catch (IOException e) {
+            System.err.println("Error saving Portal favorites: " + e.getMessage());
+        }
+    }
 }

@@ -384,3 +384,286 @@ This implementation plan breaks down the Tenant CI/CD feature into discrete, man
 - Task 22: Critical fixes from code review (COMPLETED ✅)
 - All P0 and P1 issues have been resolved
 - P2 issues (minor improvements) can be addressed in future iterations
+
+- [x] 23. Implement Build Package Feature - Data Models
+  - [ ] 23.1 Create TenantConfig data model
+    - Create TenantConfig class with fields: id, userName, defaultBranch, branchList
+    - Implement null-safe getters and setters
+    - Initialize branchList as empty ArrayList in constructor
+    - _Requirements: 11F.4_
+
+- [ ] 24. Extend PortalApiClient for Build APIs
+  - [ ] 24.1 Implement getTenantConfiguration() method
+    - Call GET /api/mo-fo/1.0/ops/tenantconfig API
+    - Set x-mo-target-tenant and authorization headers
+    - Parse JSON response into TenantConfig object
+    - Extract branch_list array from response
+    - Add comprehensive logging
+    - _Requirements: 11F.1, 11F.2, 11F.3, 11F.4_
+  
+  - [ ] 24.2 Implement submitMultiBuild() method
+    - Call POST /api/mo-fo/1.0/ops/multi_build API
+    - Set x-mo-target-tenant, authorization, and Content-Type headers
+    - Send JSON request body
+    - Add comprehensive logging (mask sensitive data)
+    - Handle HTTP errors
+    - _Requirements: 11E.10, 11.13, 11.14_
+
+- [ ] 25. Create BuildPackageDialog - UI Structure
+  - [ ] 25.1 Create BuildPackageDialog class structure
+    - Extend JDialog with modal behavior
+    - Add fields for UI components (branchComboBox, versionCodeField, appCheckboxes, buttons)
+    - Add fields for data (apiClient, token, tenant, branchList, applications)
+    - Set up constructor with parameters (parent, apiClient, token, tenant)
+    - _Requirements: 11.2, 11.4_
+  
+  - [ ] 25.2 Implement initializeUI() method
+    - Create main panel with BoxLayout
+    - Add branch selection section
+    - Add version code section
+    - Add application selection section with scroll pane
+    - Add button panel (Build Package, Close)
+    - Apply modern styling (fonts, colors, spacing)
+    - Set dialog size (600x700) and center on parent
+    - _Requirements: 11.4, 11G.1, 11G.5_
+
+- [ ] 26. Implement Branch Selection
+  - [ ] 26.1 Load branch list from tenant configuration
+    - Call apiClient.getTenantConfiguration() in async worker
+    - Show loading indicator during API call
+    - Populate branchComboBox with branch list
+    - Handle API errors gracefully
+    - _Requirements: 11.5, 11A.1, 11A.2, 11F.1_
+  
+  - [ ] 26.2 Implement branch filtering
+    - Make branchComboBox editable
+    - Add DocumentListener to editor component
+    - Implement 300ms debounced filtering with Timer
+    - Filter branches by case-insensitive substring match
+    - Update combo box model with filtered results
+    - _Requirements: 11A.3, 11A.4_
+  
+  - [ ] 26.3 Implement branch change listener
+    - Add ActionListener to branchComboBox
+    - Regenerate version code when branch changes
+    - Update versionCodeField with new version code
+    - _Requirements: 11B.4_
+
+- [ ] 27. Implement Version Code Generation
+  - [ ] 27.1 Create generateVersionCode() method
+    - Accept branch name as parameter
+    - Get current timestamp in yyyyMMddHHmmss format
+    - Return "{branch}_{timestamp}" format
+    - _Requirements: 11.9, 11B.3_
+  
+  - [ ] 27.2 Generate default version code on dialog open
+    - Use first branch from branch list
+    - Call generateVersionCode() with first branch
+    - Set versionCodeField text
+    - _Requirements: 11B.2_
+  
+  - [ ] 27.3 Make version code field editable
+    - Ensure versionCodeField is editable
+    - Add validation for non-empty on submission
+    - _Requirements: 11B.5, 11B.6_
+
+- [ ] 28. Implement Application Selection
+  - [ ] 28.1 Load and filter applications
+    - Get application list from parent dialog (already loaded)
+    - Filter applications where app_name starts with tenant code
+    - Sort filtered applications alphabetically
+    - Store in filteredApplications list
+    - _Requirements: 11.6, 11.7, 11C.2, 11C.6_
+  
+  - [ ] 28.2 Create application checkboxes
+    - Create JPanel with BoxLayout for checkboxes
+    - Add "Select All" checkbox at top
+    - Create checkbox for each filtered application
+    - Apply consistent font (Microsoft YaHei UI, 14pt)
+    - Add checkboxes to scrollable panel
+    - _Requirements: 11C.1, 11C.3, 11C.4_
+  
+  - [ ] 28.3 Implement Select All functionality
+    - Add ActionListener to selectAllCheckbox
+    - When checked: select all application checkboxes
+    - When unchecked: deselect all application checkboxes
+    - _Requirements: 11C.4_
+
+- [ ] 29. Implement Build Validation
+  - [ ] 29.1 Create validateBuildConfiguration() method
+    - Check branch is selected (not null or empty)
+    - Check version code is not empty
+    - Check at least one application is selected
+    - Show appropriate error message for each validation failure
+    - Return true only if all validations pass
+    - _Requirements: 11B.6, 11C.5, 11D.1_
+  
+  - [ ] 29.2 Create getSelectedApplications() method
+    - Iterate through appCheckboxes list
+    - Filter for checked checkboxes
+    - Extract text (app name) from each checked checkbox
+    - Return list of selected app names
+    - _Requirements: 11D.1_
+
+- [ ] 30. Implement Confirmation Dialog
+  - [ ] 30.1 Create showConfirmationDialog() method
+    - Get selected branch, version code, and applications
+    - Build confirmation message with all details
+    - Show JOptionPane with OK/CANCEL options
+    - If OK: proceed to submitBuildRequest()
+    - If CANCEL: return to Build Package dialog
+    - _Requirements: 11.11, 11D.2, 11D.3, 11D.4, 11D.5, 11D.6_
+
+- [ ] 31. Implement Build Request Submission
+  - [ ] 31.1 Create constructBuildRequest() method
+    - Create JSONObject for request body
+    - Create JSONArray for "apps"
+    - For each selected app: create app object with all required fields
+    - Set build_type="build_only" for all apps
+    - Set git_branch to selected branch for all apps
+    - Set issues=[] for all apps
+    - Set popconVisible=false for all apps
+    - Set user_name to tenant code for all apps
+    - Set version to version code for all apps
+    - Add top-level fields: description="", need_release_plan=false, plan_id="", title=version code
+    - _Requirements: 11E.1, 11E.2, 11E.3, 11E.4, 11E.5, 11E.6, 11E.7, 11E.8, 11E.9_
+  
+  - [ ] 31.2 Create submitBuildRequest() method
+    - Disable Build Package button and show "Building..." text
+    - Create SwingWorker for async submission
+    - In doInBackground(): construct JSON and call apiClient.submitMultiBuild()
+    - In done(): re-enable button, handle success/failure
+    - On success: show success message with details, close dialog
+    - On failure: show error message, keep dialog open
+    - Add comprehensive logging
+    - _Requirements: 11.12, 11.15, 11.16_
+
+- [ ] 32. Implement Modern UI Styling
+  - [ ] 32.1 Create createStyledButton() method
+    - Set font to Microsoft YaHei UI, 14pt
+    - Set background color to steel blue (70, 130, 180)
+    - Set foreground color to white
+    - Remove focus paint and set hand cursor
+    - Add mouse listener for hover effect (lighter blue on hover)
+    - _Requirements: 11G.2_
+  
+  - [ ] 32.2 Apply consistent styling to all components
+    - Use same fonts as Tenant CI/CD dialog
+    - Add proper padding (20px) to main panel
+    - Add vertical spacing (15-20px) between sections
+    - Use white background for main panel
+    - Apply rounded corners where appropriate
+    - _Requirements: 11G.1, 11G.3, 11G.4, 11G.5_
+
+- [ ] 33. Implement Resource Cleanup
+  - [ ] 33.1 Override dispose() method
+    - Stop filter timer if running
+    - Cancel current worker if running
+    - Clear currentToken
+    - Clear branchList, allApplications, filteredApplications
+    - Add comprehensive logging
+    - Call super.dispose()
+    - _Requirements: 15.3, 15.4_
+
+- [ ] 34. Integrate with TenantCICDDialog
+  - [ ] 34.1 Update handleBuild() method
+    - Remove "Not Implemented" message
+    - Check if connected (token not null/empty)
+    - Create BuildPackageDialog with current context
+    - Pass apiClient, currentToken, currentTenant
+    - Show dialog
+    - _Requirements: 11.1, 11.2, 11.3_
+
+- [ ] 35. Implement Comprehensive Logging
+  - [ ] 35.1 Add dialog lifecycle logging
+    - Log dialog open with tenant code
+    - Log tenant configuration loading
+    - Log branch list size
+    - Log application filtering results
+    - Log dialog disposal
+    - _Requirements: 16.5_
+  
+  - [ ] 35.2 Add user action logging
+    - Log branch selection
+    - Log version code generation
+    - Log application selection count
+    - Log Build Package button click
+    - _Requirements: 16.5_
+  
+  - [ ] 35.3 Add API call logging
+    - Log tenant config API call with URL
+    - Log multi-build API call with parameters
+    - Log request body (formatted JSON)
+    - Log API responses
+    - Mask sensitive data (tokens)
+    - _Requirements: 16.1, 16.2, 16.10_
+  
+  - [ ] 35.4 Add error logging
+    - Log all exceptions with stack traces
+    - Log validation failures
+    - Log API errors with context
+    - Use appropriate log levels (INFO, ERROR)
+    - _Requirements: 16.7, 16.8_
+
+- [ ] 36. Error Handling
+  - [ ] 36.1 Handle network errors
+    - Catch IOException in API calls
+    - Display user-friendly error messages
+    - Log full error with stack trace
+    - Keep dialog open for retry
+    - _Requirements: 13.1, 13.4_
+  
+  - [ ] 36.2 Handle authentication errors
+    - Detect 401/403 status codes
+    - Display authentication error message
+    - Suggest reconnecting to tenant
+    - Close dialog and return to main window
+    - _Requirements: 12.5, 13.2, 13.3_
+  
+  - [ ] 36.3 Handle validation errors
+    - Show specific error message for each validation failure
+    - Keep dialog open for correction
+    - Highlight invalid fields if possible
+    - _Requirements: 11D.1_
+  
+  - [ ] 36.4 Handle API errors
+    - Parse error messages from API responses
+    - Display error to user
+    - Log full response body
+    - _Requirements: 13.2, 13.4_
+
+- [ ] 37. Testing and Validation
+  - [ ] 37.1 Manual testing
+    - Test Build button enabled/disabled state
+    - Test dialog opens with all UI elements
+    - Test branch list loads correctly
+    - Test branch filtering with various keywords
+    - Test version code generation and regeneration
+    - Test application filtering by tenant code
+    - Test Select All checkbox
+    - Test validation with invalid inputs
+    - Test confirmation dialog
+    - Test successful build submission
+    - Test error handling
+    - _Requirements: All build requirements_
+  
+  - [ ] 37.2 Integration testing
+    - Test complete flow from Build button to submission
+    - Test with different tenants
+    - Test with various branch lists
+    - Test with different application counts
+    - Test error scenarios (network failure, auth failure)
+    - _Requirements: All build requirements_
+
+- [ ] 38. Checkpoint - Ensure build functionality works
+  - Ensure all build tests pass, ask the user if questions arise.
+
+## Updated Notes
+
+- Tasks 1-19: Core implementation (COMPLETED ✅)
+- Task 20: Unit tests (OPTIONAL - not required for MVP)
+- Task 21: Integration checkpoint (COMPLETED ✅)
+- Task 22: Critical fixes from code review (COMPLETED ✅)
+- **Tasks 23-38: Build Package feature implementation (NEW - READY FOR IMPLEMENTATION)**
+- All P0 and P1 issues have been resolved
+- P2 issues (minor improvements) can be addressed in future iterations

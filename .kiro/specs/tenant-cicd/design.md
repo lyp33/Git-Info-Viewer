@@ -39,23 +39,31 @@ The design follows the existing application architecture patterns, using Java Sw
 │  └──────────────────────────────────────────────────────┘  │
 └──────────────────────────┬──────────────────────────────────┘
                            │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   PortalApiClient                            │
-│  - getToken(username, password, tenantCode)                 │
-│  - getApplicationList(tenantCode, token)                    │
-│  - getPlanNames(tenantCode, token)                          │
-│  - getBuildResultByPlan(tenantCode, token, planTitle)       │
-│  - getBuildResultByApp(tenantCode, token, params)           │
-└──────────────────────────┬──────────────────────────────────┘
+                           ├─────────────────┐
+                           │                 │
+                           ▼                 ▼
+┌──────────────────────────────┐  ┌──────────────────────────┐
+│   BuildPackageDialog         │  │   PortalApiClient        │
+│  ┌────────────────────────┐  │  │  - getToken()            │
+│  │ Branch Selection       │  │  │  - getApplicationList()  │
+│  │ Version Code           │  │  │  - getPlanNames()        │
+│  │ Application Selection  │  │  │  - getBuildResultByPlan()│
+│  │ [Build Package]        │  │  │  - getBuildResultByApp() │
+│  └────────────────────────┘  │  │  - getTenantConfig()     │
+└──────────────┬───────────────┘  │  - submitMultiBuild()    │
+               │                  └──────────┬───────────────┘
+               │                             │
+               └─────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                Portal REST APIs                              │
 │  - POST /cas/get-token                                       │
 │  - GET /api/mo-fo/1.0/ops/app                               │
+│  - GET /api/mo-fo/1.0/ops/tenantconfig                      │
 │  - GET /api/mo-fo/1.0/ops/multi_build/title_list           │
 │  - GET /api/mo-fo/1.0/ops/multi_build                       │
+│  - POST /api/mo-fo/1.0/ops/multi_build                      │
 │  - GET /api/mo-fo/1.0/ops/build                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -102,13 +110,33 @@ The design follows the existing application architecture patterns, using Java Sw
    - Results extracted from data array
    - Results displayed in table
 
-5. **Export Flow**:
+5. **Build Flow**:
+   - User clicks Build button in TenantCICDDialog
+   - BuildPackageDialog opens
+   - System calls GET /api/mo-fo/1.0/ops/tenantconfig API to load branch list
+   - System loads application list (already cached from connection)
+   - System filters applications by tenant code prefix
+   - System generates default version code using first branch
+   - User selects branch from filterable dropdown
+   - System regenerates version code with selected branch
+   - User optionally edits version code
+   - User selects one or more applications via checkboxes
+   - User clicks "Build Package" button
+   - System validates: branch selected, version code not empty, at least one app selected
+   - System displays confirmation dialog with build details
+   - User clicks "Confirm" in confirmation dialog
+   - System constructs JSON request body with all selected apps
+   - System calls POST /api/mo-fo/1.0/ops/multi_build API
+   - On success: success message displayed, dialog closes
+   - On failure: error message displayed, dialog remains open
+
+6. **Export Flow**:
    - User clicks "Download CSV" button
    - System generates CSV file with headers and all result rows
    - File saved with name: "tenant-cicd-results-{timestamp}.csv"
    - Success message displayed
 
-6. **Copy Flow**:
+7. **Copy Flow**:
    - User clicks "Copy Image Names" button
    - System extracts all image_name values from results
    - System joins with newline character (\n)
@@ -1242,13 +1270,943 @@ private void handleCopyImageNames() {
 - Application works without Portal configuration (feature simply disabled)
 - No changes to existing Jenkins or Git functionality
 
+## Build Package Feature Design
+
+### Overview
+
+The Build Package feature allows users to trigger coordinated builds of multiple applications in a single package. This extends the existing Tenant CI/CD dialog with a new Build Package dialog that provides branch selection, version code generation, and multi-application selection.
+
+### Build Package Dialog Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   BuildPackageDialog                         │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ Branch Selection                                      │  │
+│  │  Branch: [Filterable Dropdown ▼]                     │  │
+│  └──────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ Version Code                                          │  │
+│  │  Version: [dev_20260120072245____________]            │  │
+│  │           (auto-generated, editable)                  │  │
+│  └──────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ Application Selection                                 │  │
+│  │  ☐ Select All                                        │  │
+│  │  ┌────────────────────────────────────────────────┐  │  │
+│  │  │ ☑ thailife-bs                                  │  │  │
+│  │  │ ☑ thailife-ui                                  │  │  │
+│  │  │ ☐ thailife-api                                 │  │  │
+│  │  │ ☐ thailife-gateway                             │  │  │
+│  │  └────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                              │
+│  [Build Package]                                      [Close]│
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Component: BuildPackageDialog
+
+**Purpose**: Dialog for configuring and triggering multi-application builds
+
+**Responsibilities**:
+- Load branch list from tenant configuration API
+- Load and filter application list by tenant code
+- Generate and manage version codes
+- Validate build configuration
+- Display confirmation dialog
+- Submit build request to Portal API
+
+**Key Methods**:
+```java
+public class BuildPackageDialog extends JDialog {
+    private JComboBox<String> branchComboBox;
+    private JTextField versionCodeField;
+    private JCheckBox selectAllCheckbox;
+    private JPanel appListPanel;
+    private List<JCheckBox> appCheckboxes;
+    private JButton buildPackageButton;
+    private JButton closeButton;
+    
+    private PortalApiClient apiClient;
+    private String currentToken;
+    private String currentTenant;
+    private List<String> branchList;
+    private List<Application> allApplications;
+    private List<Application> filteredApplications;
+    
+    public BuildPackageDialog(Frame parent, PortalApiClient apiClient, 
+                              String token, String tenant);
+    private void initializeUI();
+    private void loadTenantConfiguration();
+    private void loadAndFilterApplications();
+    private void setupBranchFiltering();
+    private void setupBranchChangeListener();
+    private String generateVersionCode(String branch);
+    private void handleSelectAll();
+    private void handleBuildPackage();
+    private boolean validateBuildConfiguration();
+    private void showConfirmationDialog();
+    private void submitBuildRequest();
+}
+```
+
+### Branch Selection with Filtering
+
+**Implementation**:
+```java
+private void setupBranchFiltering() {
+    branchComboBox.setEditable(true);
+    
+    // Add document listener for real-time filtering
+    JTextComponent editor = (JTextComponent) branchComboBox.getEditor().getEditorComponent();
+    editor.getDocument().addDocumentListener(new DocumentListener() {
+        private Timer filterTimer;
+        
+        @Override
+        public void insertUpdate(DocumentEvent e) {
+            scheduleFilter();
+        }
+        
+        @Override
+        public void removeUpdate(DocumentEvent e) {
+            scheduleFilter();
+        }
+        
+        @Override
+        public void changedUpdate(DocumentEvent e) {
+            scheduleFilter();
+        }
+        
+        private void scheduleFilter() {
+            if (filterTimer != null) {
+                filterTimer.stop();
+            }
+            filterTimer = new Timer(300, e -> filterBranches());
+            filterTimer.setRepeats(false);
+            filterTimer.start();
+        }
+    });
+}
+
+private void filterBranches() {
+    String filterText = ((JTextComponent) branchComboBox.getEditor().getEditorComponent())
+        .getText().toLowerCase();
+    
+    DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
+    for (String branch : branchList) {
+        if (branch.toLowerCase().contains(filterText)) {
+            model.addElement(branch);
+        }
+    }
+    
+    branchComboBox.setModel(model);
+    branchComboBox.showPopup();
+}
+```
+
+### Version Code Generation
+
+**Format**: `{branch}_yyyyMMddHHmmss`
+
+**Implementation**:
+```java
+private void setupBranchChangeListener() {
+    branchComboBox.addActionListener(e -> {
+        String selectedBranch = (String) branchComboBox.getSelectedItem();
+        if (selectedBranch != null && !selectedBranch.isEmpty()) {
+            String versionCode = generateVersionCode(selectedBranch);
+            versionCodeField.setText(versionCode);
+        }
+    });
+}
+
+private String generateVersionCode(String branch) {
+    SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
+    String timestamp = sdf.format(new Date());
+    return branch + "_" + timestamp;
+}
+```
+
+**Auto-generation Behavior**:
+- When dialog opens: Generate version code using first branch in list
+- When branch changes: Regenerate version code with new branch and current timestamp
+- User can manually edit: Version code field is editable
+- Validation: Must not be empty before submission
+
+### Application Filtering
+
+**Filter Logic**:
+```java
+private void loadAndFilterApplications() {
+    logger.info("Loading applications for tenant: {}", currentTenant);
+    
+    try {
+        // Load all applications
+        allApplications = apiClient.getApplicationList(currentTenant, currentToken);
+        logger.info("Loaded {} total applications", allApplications.size());
+        
+        // Filter by tenant code prefix
+        filteredApplications = allApplications.stream()
+            .filter(app -> app.getAppName().startsWith(currentTenant))
+            .sorted(Comparator.comparing(Application::getAppName))
+            .collect(Collectors.toList());
+        
+        logger.info("Filtered to {} applications starting with '{}'", 
+                   filteredApplications.size(), currentTenant);
+        
+        // Populate UI
+        populateApplicationList();
+        
+    } catch (IOException e) {
+        logger.error("Failed to load applications", e);
+        JOptionPane.showMessageDialog(this,
+            "Failed to load applications: " + e.getMessage(),
+            "Error",
+            JOptionPane.ERROR_MESSAGE);
+    }
+}
+
+private void populateApplicationList() {
+    appListPanel.removeAll();
+    appCheckboxes.clear();
+    
+    // Add select all checkbox
+    selectAllCheckbox = new JCheckBox("Select All");
+    selectAllCheckbox.addActionListener(e -> handleSelectAll());
+    appListPanel.add(selectAllCheckbox);
+    
+    // Add application checkboxes
+    for (Application app : filteredApplications) {
+        JCheckBox checkbox = new JCheckBox(app.getAppName());
+        checkbox.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 14));
+        appCheckboxes.add(checkbox);
+        appListPanel.add(checkbox);
+    }
+    
+    appListPanel.revalidate();
+    appListPanel.repaint();
+}
+```
+
+### Build Validation
+
+**Validation Rules**:
+```java
+private boolean validateBuildConfiguration() {
+    // Check branch selection
+    String branch = (String) branchComboBox.getSelectedItem();
+    if (branch == null || branch.trim().isEmpty()) {
+        JOptionPane.showMessageDialog(this,
+            "Please select a branch",
+            "Validation Error",
+            JOptionPane.WARNING_MESSAGE);
+        return false;
+    }
+    
+    // Check version code
+    String versionCode = versionCodeField.getText().trim();
+    if (versionCode.isEmpty()) {
+        JOptionPane.showMessageDialog(this,
+            "Please enter a version code",
+            "Validation Error",
+            JOptionPane.WARNING_MESSAGE);
+        return false;
+    }
+    
+    // Check application selection
+    List<String> selectedApps = getSelectedApplications();
+    if (selectedApps.isEmpty()) {
+        JOptionPane.showMessageDialog(this,
+            "Please select at least one application",
+            "Validation Error",
+            JOptionPane.WARNING_MESSAGE);
+        return false;
+    }
+    
+    return true;
+}
+
+private List<String> getSelectedApplications() {
+    return appCheckboxes.stream()
+        .filter(JCheckBox::isSelected)
+        .map(JCheckBox::getText)
+        .collect(Collectors.toList());
+}
+```
+
+### Confirmation Dialog
+
+**Purpose**: Display build configuration for user review before submission
+
+**UI Layout**:
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Confirm Build Package                                 [X]   │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  You are about to build the following package:              │
+│                                                              │
+│  Branch:       dev                                           │
+│  Version Code: dev_20260120072245                            │
+│                                                              │
+│  Applications (3 selected):                                  │
+│    • thailife-bs                                             │
+│    • thailife-ui                                             │
+│    • thailife-api                                            │
+│                                                              │
+│                                    [Confirm]  [Cancel]       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Implementation**:
+```java
+private void showConfirmationDialog() {
+    String branch = (String) branchComboBox.getSelectedItem();
+    String versionCode = versionCodeField.getText().trim();
+    List<String> selectedApps = getSelectedApplications();
+    
+    StringBuilder message = new StringBuilder();
+    message.append("You are about to build the following package:\n\n");
+    message.append("Branch:       ").append(branch).append("\n");
+    message.append("Version Code: ").append(versionCode).append("\n\n");
+    message.append("Applications (").append(selectedApps.size()).append(" selected):\n");
+    for (String app : selectedApps) {
+        message.append("  • ").append(app).append("\n");
+    }
+    
+    int choice = JOptionPane.showConfirmDialog(this,
+        message.toString(),
+        "Confirm Build Package",
+        JOptionPane.OK_CANCEL_OPTION,
+        JOptionPane.QUESTION_MESSAGE);
+    
+    if (choice == JOptionPane.OK_OPTION) {
+        submitBuildRequest();
+    }
+}
+```
+
+### Build API Request Construction
+
+**Request Body Structure**:
+```json
+{
+  "apps": [
+    {
+      "app_name": "thailife-bs",
+      "build_type": "build_only",
+      "git_branch": "dev",
+      "issues": [],
+      "popconVisible": false,
+      "user_name": "thailife",
+      "version": "dev_20260120072245"
+    },
+    {
+      "app_name": "thailife-ui",
+      "build_type": "build_only",
+      "git_branch": "dev",
+      "issues": [],
+      "popconVisible": false,
+      "user_name": "thailife",
+      "version": "dev_20260120072245"
+    }
+  ],
+  "description": "",
+  "need_release_plan": false,
+  "plan_id": "",
+  "title": "dev_20260120072245"
+}
+```
+
+**Implementation**:
+```java
+private void submitBuildRequest() {
+    String branch = (String) branchComboBox.getSelectedItem();
+    String versionCode = versionCodeField.getText().trim();
+    List<String> selectedApps = getSelectedApplications();
+    
+    logger.info("Submitting build request: branch={}, version={}, apps={}",
+               branch, versionCode, selectedApps);
+    
+    // Show loading indicator
+    buildPackageButton.setEnabled(false);
+    buildPackageButton.setText("Building...");
+    
+    SwingWorker<Void, Void> worker = new SwingWorker<>() {
+        @Override
+        protected Void doInBackground() throws Exception {
+            // Construct request body
+            JSONObject requestBody = new JSONObject();
+            JSONArray appsArray = new JSONArray();
+            
+            for (String appName : selectedApps) {
+                JSONObject appObj = new JSONObject();
+                appObj.put("app_name", appName);
+                appObj.put("build_type", "build_only");
+                appObj.put("git_branch", branch);
+                appObj.put("issues", new JSONArray());
+                appObj.put("popconVisible", false);
+                appObj.put("user_name", currentTenant);
+                appObj.put("version", versionCode);
+                appsArray.put(appObj);
+            }
+            
+            requestBody.put("apps", appsArray);
+            requestBody.put("description", "");
+            requestBody.put("need_release_plan", false);
+            requestBody.put("plan_id", "");
+            requestBody.put("title", versionCode);
+            
+            logger.info("Build request body: {}", requestBody.toString(2));
+            
+            // Call API
+            apiClient.submitMultiBuild(currentTenant, currentToken, requestBody.toString());
+            
+            return null;
+        }
+        
+        @Override
+        protected void done() {
+            buildPackageButton.setEnabled(true);
+            buildPackageButton.setText("Build Package");
+            
+            try {
+                get();
+                logger.info("Build request submitted successfully");
+                JOptionPane.showMessageDialog(BuildPackageDialog.this,
+                    "Build package submitted successfully!\n\n" +
+                    "Branch: " + branch + "\n" +
+                    "Version: " + versionCode + "\n" +
+                    "Applications: " + selectedApps.size(),
+                    "Build Submitted",
+                    JOptionPane.INFORMATION_MESSAGE);
+                dispose();
+            } catch (Exception e) {
+                logger.error("Build request failed", e);
+                JOptionPane.showMessageDialog(BuildPackageDialog.this,
+                    "Build request failed: " + e.getMessage(),
+                    "Build Error",
+                    JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    };
+    
+    worker.execute();
+}
+```
+
+### PortalApiClient Extensions
+
+**New Methods**:
+```java
+public class PortalApiClient {
+    // ... existing methods ...
+    
+    /**
+     * Get tenant configuration including branch list
+     */
+    public TenantConfig getTenantConfiguration(String tenantCode, String token) throws IOException {
+        String url = BASE_URL + "/api/mo-fo/1.0/ops/tenantconfig";
+        
+        Map<String, String> headers = new HashMap<>();
+        headers.put("x-mo-target-tenant", tenantCode);
+        headers.put("authorization", "Bearer " + token);
+        
+        logger.info("Getting tenant configuration for: {}", tenantCode);
+        String response = sendGetRequest(url, headers);
+        
+        // Parse response
+        JSONObject json = new JSONObject(response);
+        TenantConfig config = new TenantConfig();
+        config.setId(json.optString("id"));
+        config.setUserName(json.optString("user_name"));
+        config.setDefaultBranch(json.optString("default_branch"));
+        
+        // Parse branch list
+        JSONArray branchArray = json.optJSONArray("branch_list");
+        if (branchArray != null) {
+            List<String> branches = new ArrayList<>();
+            for (int i = 0; i < branchArray.length(); i++) {
+                branches.add(branchArray.getString(i));
+            }
+            config.setBranchList(branches);
+        }
+        
+        logger.info("Loaded {} branches for tenant {}", 
+                   config.getBranchList().size(), tenantCode);
+        return config;
+    }
+    
+    /**
+     * Submit multi-application build request
+     */
+    public void submitMultiBuild(String tenantCode, String token, String requestBody) 
+            throws IOException {
+        String url = BASE_URL + "/api/mo-fo/1.0/ops/multi_build";
+        
+        Map<String, String> headers = new HashMap<>();
+        headers.put("x-mo-target-tenant", tenantCode);
+        headers.put("authorization", "Bearer " + token);
+        headers.put("Content-Type", "application/json");
+        
+        logger.info("Submitting multi-build request to: {}", url);
+        logRequest("POST", url, headers, requestBody);
+        
+        String response = sendPostRequest(url, headers, requestBody);
+        logResponse(200, response);
+        
+        logger.info("Multi-build request submitted successfully");
+    }
+}
+```
+
+### Data Model: TenantConfig
+
+**Purpose**: Represents tenant configuration data
+
+```java
+public class TenantConfig {
+    private String id;
+    private String userName;
+    private String defaultBranch;
+    private List<String> branchList;
+    
+    public TenantConfig() {
+        this.branchList = new ArrayList<>();
+    }
+    
+    // Getters and setters
+    public String getId() {
+        return id != null ? id : "";
+    }
+    
+    public void setId(String id) {
+        this.id = id;
+    }
+    
+    public String getUserName() {
+        return userName != null ? userName : "";
+    }
+    
+    public void setUserName(String userName) {
+        this.userName = userName;
+    }
+    
+    public String getDefaultBranch() {
+        return defaultBranch != null ? defaultBranch : "";
+    }
+    
+    public void setDefaultBranch(String defaultBranch) {
+        this.defaultBranch = defaultBranch;
+    }
+    
+    public List<String> getBranchList() {
+        return branchList;
+    }
+    
+    public void setBranchList(List<String> branchList) {
+        this.branchList = branchList != null ? branchList : new ArrayList<>();
+    }
+}
+```
+
+### Modern UI Styling
+
+**Design Principles**:
+- Flat design with subtle shadows
+- Consistent with existing Tenant CI/CD dialog
+- Modern fonts (Microsoft YaHei UI)
+- Rounded corners on buttons
+- Proper spacing and padding
+- Color-coded status indicators
+
+**Button Styling** (matching Tenant CI/CD):
+```java
+private JButton createStyledButton(String text) {
+    JButton button = new JButton(text);
+    button.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 14));
+    button.setFocusPainted(false);
+    button.setBorderPainted(true);
+    button.setBackground(new Color(70, 130, 180));  // Steel blue
+    button.setForeground(Color.WHITE);
+    button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+    
+    // Add hover effect
+    button.addMouseListener(new MouseAdapter() {
+        @Override
+        public void mouseEntered(MouseEvent e) {
+            button.setBackground(new Color(100, 149, 237));  // Cornflower blue
+        }
+        
+        @Override
+        public void mouseExited(MouseEvent e) {
+            button.setBackground(new Color(70, 130, 180));
+        }
+    });
+    
+    return button;
+}
+```
+
+**Panel Styling**:
+```java
+private void initializeUI() {
+    setTitle("Build Package - " + currentTenant);
+    setModal(true);
+    setSize(600, 700);
+    setLocationRelativeTo(getParent());
+    setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+    
+    // Main panel with padding
+    JPanel mainPanel = new JPanel();
+    mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
+    mainPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+    mainPanel.setBackground(Color.WHITE);
+    
+    // Add sections with spacing
+    mainPanel.add(createBranchSection());
+    mainPanel.add(Box.createVerticalStrut(15));
+    mainPanel.add(createVersionSection());
+    mainPanel.add(Box.createVerticalStrut(15));
+    mainPanel.add(createApplicationSection());
+    mainPanel.add(Box.createVerticalStrut(20));
+    mainPanel.add(createButtonPanel());
+    
+    add(new JScrollPane(mainPanel));
+}
+```
+
+### Integration with TenantCICDDialog
+
+**Update Build Button Handler**:
+```java
+// In TenantCICDDialog.java
+private void handleBuild() {
+    logger.info("Opening Build Package dialog");
+    
+    if (currentToken == null || currentToken.isEmpty()) {
+        JOptionPane.showMessageDialog(this,
+            "Please connect to a tenant first",
+            "Not Connected",
+            JOptionPane.WARNING_MESSAGE);
+        return;
+    }
+    
+    BuildPackageDialog dialog = new BuildPackageDialog(
+        (Frame) SwingUtilities.getWindowAncestor(this),
+        apiClient,
+        currentToken,
+        currentTenant
+    );
+    dialog.setVisible(true);
+}
+```
+
+### Resource Cleanup
+
+**BuildPackageDialog Disposal**:
+```java
+@Override
+public void dispose() {
+    logger.info("Disposing BuildPackageDialog");
+    
+    // Stop any running timers
+    if (filterTimer != null) {
+        filterTimer.stop();
+        filterTimer = null;
+    }
+    
+    // Cancel any running workers
+    if (currentWorker != null && !currentWorker.isDone()) {
+        currentWorker.cancel(true);
+        currentWorker = null;
+    }
+    
+    // Clear sensitive data
+    currentToken = null;
+    
+    // Clear cached data
+    if (branchList != null) {
+        branchList.clear();
+    }
+    if (allApplications != null) {
+        allApplications.clear();
+    }
+    if (filteredApplications != null) {
+        filteredApplications.clear();
+    }
+    
+    logger.info("BuildPackageDialog disposed");
+    super.dispose();
+}
+```
+
+### Error Handling
+
+**Network Errors**:
+```java
+try {
+    TenantConfig config = apiClient.getTenantConfiguration(currentTenant, currentToken);
+    // Process config
+} catch (IOException e) {
+    logger.error("Failed to load tenant configuration", e);
+    JOptionPane.showMessageDialog(this,
+        "Failed to load tenant configuration: " + e.getMessage(),
+        "Network Error",
+        JOptionPane.ERROR_MESSAGE);
+    // Disable branch dropdown
+    branchComboBox.setEnabled(false);
+}
+```
+
+**Authentication Errors**:
+```java
+try {
+    apiClient.submitMultiBuild(currentTenant, currentToken, requestBody);
+} catch (IOException e) {
+    if (e.getMessage().contains("401") || e.getMessage().contains("Unauthorized")) {
+        logger.error("Authentication failed during build submission", e);
+        JOptionPane.showMessageDialog(this,
+            "Authentication failed. Please reconnect to the tenant.",
+            "Authentication Error",
+            JOptionPane.ERROR_MESSAGE);
+        dispose();  // Close dialog and return to main window
+    } else {
+        logger.error("Build submission failed", e);
+        JOptionPane.showMessageDialog(this,
+            "Build submission failed: " + e.getMessage(),
+            "Error",
+            JOptionPane.ERROR_MESSAGE);
+    }
+}
+```
+
+### Logging Strategy
+
+**Comprehensive Logging**:
+```java
+// Dialog lifecycle
+logger.info("BuildPackageDialog opened for tenant: {}", currentTenant);
+logger.info("Loading tenant configuration...");
+logger.info("Loaded {} branches", branchList.size());
+logger.info("Loaded {} applications, filtered to {} for tenant {}",
+           allApplications.size(), filteredApplications.size(), currentTenant);
+
+// User actions
+logger.info("User selected branch: {}", selectedBranch);
+logger.info("Generated version code: {}", versionCode);
+logger.info("User selected {} applications", selectedApps.size());
+logger.info("User clicked Build Package button");
+
+// API calls
+logger.info("Calling tenant config API: {}", url);
+logger.info("Submitting build request: branch={}, version={}, apps={}",
+           branch, versionCode, selectedApps);
+logger.info("Build request body: {}", requestBody.toString(2));
+
+// Results
+logger.info("Build request submitted successfully");
+logger.error("Build request failed", exception);
+```
+
+## Correctness Properties
+
+*A property is a characteristic or behavior that should hold true across all valid executions of a system—essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
+
+### Property 1: Build Button Enabled State
+
+*For any* connection state, the Build button should be enabled if and only if the system is connected to a tenant (has a valid token and tenant code).
+
+**Validates: Requirements 11.3**
+
+### Property 2: Application Filtering by Tenant Code
+
+*For any* list of applications and any tenant code, the filtered application list should contain only applications whose app_name starts with the tenant code, and should be sorted alphabetically.
+
+**Validates: Requirements 11.7, 11C.2, 11C.6**
+
+### Property 3: Version Code Format
+
+*For any* branch name, the generated version code should match the format "{branch}_{timestamp}" where timestamp is exactly 14 digits in yyyyMMddHHmmss format.
+
+**Validates: Requirements 11.9, 11B.3**
+
+### Property 4: Branch Filtering Case-Insensitivity
+
+*For any* branch list and any filter keyword, the filtered branches should include all branches that contain the keyword as a case-insensitive substring.
+
+**Validates: Requirements 11A.3, 11A.4**
+
+### Property 5: Build Validation Rules
+
+*For any* build configuration, validation should pass if and only if: (1) a branch is selected, (2) version code is not empty, and (3) at least one application is selected.
+
+**Validates: Requirements 11B.6, 11C.5, 11D.1**
+
+### Property 6: JSON Request Structure
+
+*For any* valid build configuration with N selected applications, the constructed JSON request body should have an "apps" array with exactly N objects, each containing all required fields (app_name, build_type, git_branch, issues, popconVisible, user_name, version).
+
+**Validates: Requirements 11E.1, 11E.2**
+
+### Property 7: JSON Constant Fields
+
+*For any* constructed JSON request body, all app objects should have build_type="build_only", issues=[], and popconVisible=false.
+
+**Validates: Requirements 11E.3, 11E.5, 11E.6**
+
+### Property 8: JSON Value Propagation
+
+*For any* build configuration, all app objects in the JSON request should have git_branch equal to the selected branch, user_name equal to the tenant code, and version equal to the entered version code.
+
+**Validates: Requirements 11E.4, 11E.7, 11E.8**
+
+### Property 9: JSON Top-Level Fields
+
+*For any* constructed JSON request body, the top-level object should have description="" (empty string), need_release_plan=false, plan_id="" (empty string), and title equal to the version code.
+
+**Validates: Requirements 11E.9**
+
+### Property 10: API Authentication Headers
+
+*For any* API request to Portal (tenant config or multi-build), the request should include x-mo-target-tenant header with the tenant code and authorization header with "Bearer {token}".
+
+**Validates: Requirements 11.13, 11.14, 11F.2, 11F.3**
+
+### Property 11: Branch List Extraction
+
+*For any* valid tenant configuration API response containing a branch_list field, the extracted branch list should contain all branches from the response in the same order.
+
+**Validates: Requirements 11F.4**
+
+## Testing Strategy
+
+### Unit Testing
+
+**Test Coverage for Build Package Feature**:
+- BuildPackageDialog initialization and UI setup
+- Version code generation with various branch names
+- Application filtering by tenant code prefix
+- Branch filtering with various keywords
+- Validation logic (branch, version code, application selection)
+- JSON request body construction
+- TenantConfig parsing from API response
+
+**Test Framework**: JUnit 5
+
+**Example Tests**:
+```java
+@Test
+public void testVersionCodeFormat() {
+    String branch = "dev";
+    String versionCode = generateVersionCode(branch);
+    
+    // Should match format: {branch}_yyyyMMddHHmmss
+    assertTrue(versionCode.matches("dev_\\d{14}"));
+}
+
+@Test
+public void testApplicationFiltering() {
+    List<Application> apps = Arrays.asList(
+        createApp("thailife-bs"),
+        createApp("thailife-ui"),
+        createApp("other-app"),
+        createApp("thailife-api")
+    );
+    
+    List<Application> filtered = filterApplicationsByTenant(apps, "thailife");
+    
+    assertEquals(3, filtered.size());
+    assertTrue(filtered.stream().allMatch(app -> app.getAppName().startsWith("thailife")));
+}
+
+@Test
+public void testBuildValidation() {
+    // Test with missing branch
+    assertFalse(validateBuildConfiguration(null, "v1.0", Arrays.asList("app1")));
+    
+    // Test with empty version code
+    assertFalse(validateBuildConfiguration("dev", "", Arrays.asList("app1")));
+    
+    // Test with no applications
+    assertFalse(validateBuildConfiguration("dev", "v1.0", Collections.emptyList()));
+    
+    // Test with valid configuration
+    assertTrue(validateBuildConfiguration("dev", "v1.0", Arrays.asList("app1")));
+}
+
+@Test
+public void testJSONRequestConstruction() {
+    String branch = "dev";
+    String versionCode = "dev_20260120072245";
+    String tenantCode = "thailife";
+    List<String> apps = Arrays.asList("thailife-bs", "thailife-ui");
+    
+    JSONObject request = constructBuildRequest(branch, versionCode, tenantCode, apps);
+    
+    // Verify structure
+    assertTrue(request.has("apps"));
+    assertTrue(request.has("title"));
+    assertEquals(versionCode, request.getString("title"));
+    
+    // Verify apps array
+    JSONArray appsArray = request.getJSONArray("apps");
+    assertEquals(2, appsArray.length());
+    
+    // Verify each app object
+    for (int i = 0; i < appsArray.length(); i++) {
+        JSONObject appObj = appsArray.getJSONObject(i);
+        assertEquals("build_only", appObj.getString("build_type"));
+        assertEquals(branch, appObj.getString("git_branch"));
+        assertEquals(tenantCode, appObj.getString("user_name"));
+        assertEquals(versionCode, appObj.getString("version"));
+        assertFalse(appObj.getBoolean("popconVisible"));
+    }
+}
+```
+
+### Integration Testing
+
+**Test Scenarios**:
+1. Open Build Package dialog after connecting to tenant
+2. Load branch list from tenant configuration API
+3. Filter applications by tenant code
+4. Generate and regenerate version codes
+5. Validate build configuration with various inputs
+6. Submit build request with valid configuration
+7. Handle API errors gracefully
+
+**Test Environment**: Mock Portal API server or test tenant
+
+### Manual Testing Checklist
+
+- [ ] Build button enabled only when connected
+- [ ] Build Package dialog opens with all UI elements
+- [ ] Branch dropdown loads from tenant config API
+- [ ] Branch filtering works with various keywords
+- [ ] Version code auto-generates with correct format
+- [ ] Version code regenerates when branch changes
+- [ ] Version code field is editable
+- [ ] Application list filtered by tenant code
+- [ ] Applications sorted alphabetically
+- [ ] Select All checkbox works correctly
+- [ ] Validation prevents submission with invalid data
+- [ ] Confirmation dialog shows correct details
+- [ ] Build request submits successfully
+- [ ] Success message displays after submission
+- [ ] Error messages display for failures
+- [ ] Dialog closes after successful submission
+- [ ] Resource cleanup on dialog close
+
 ## Future Enhancements
 
-1. **Build Trigger**: Implement the Build button functionality to trigger new builds
-2. **Build Details**: Click on build row to view detailed build information
+1. **Build Details View**: Click on build row in results table to view detailed build information and logs
+2. **Build Status Monitoring**: Real-time monitoring of build progress after submission
 3. **Favorites**: Allow users to favorite frequently queried apps or plans
 4. **Export Options**: Add JSON and Excel export formats
 5. **Advanced Filters**: Add date range, status filters
 6. **Build Comparison**: Compare builds across different versions
 7. **Notifications**: Alert when builds complete or fail
 8. **Multi-Tenant View**: View builds across multiple tenants simultaneously
+9. **Build Templates**: Save and reuse common build configurations

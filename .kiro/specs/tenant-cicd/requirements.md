@@ -14,6 +14,10 @@ This document specifies the requirements for implementing a Tenant-level CI/CD m
 - **Plan**: A multi-application build package with a unique title
 - **Application**: A deployable software component (app) in the tenant
 - **System**: The Git Info Viewer application with Tenant CI/CD feature
+- **Branch**: A Git branch name used for building applications
+- **Version_Code**: A unique identifier for a build package, typically in format "{branch}_{timestamp}"
+- **Build_Package**: A coordinated build of multiple applications with the same version code
+- **Tenant_Configuration**: Configuration data for a tenant including available branches
 
 ## Requirements
 
@@ -141,15 +145,120 @@ This document specifies the requirements for implementing a Tenant-level CI/CD m
 4. THE System SHALL display a confirmation message after successful copy
 5. THE System SHALL disable the Copy Image Names button when no results are displayed
 
-### Requirement 11: Build Navigation
+### Requirement 11: Multi-Application Build Package
 
-**User Story:** As a developer, I want to navigate to a build page, so that I can trigger new builds.
+**User Story:** As a developer, I want to trigger builds for multiple applications in a single package, so that I can deploy coordinated releases across services.
 
 #### Acceptance Criteria
 
 1. THE System SHALL provide a "Build" button in the Tenant CI/CD interface
-2. WHEN the Build button is clicked, THE System SHALL navigate to a build page (implementation deferred)
+2. WHEN the Build button is clicked, THE System SHALL open a Build Package dialog
 3. THE System SHALL enable the Build button only when connected to a tenant
+4. THE Build Package dialog SHALL display input fields for branch selection, version code, and application selection
+5. THE System SHALL load branch list from the tenant configuration API response
+6. THE System SHALL load application list from the get application list API response
+7. THE System SHALL filter the application list to show only applications whose names start with the current tenant code
+8. THE System SHALL support multi-selection of applications using checkboxes
+9. THE System SHALL provide a default version code in the format "{branch}_{timestamp}" where timestamp is yyyyMMddHHmmss
+10. THE System SHALL allow users to manually edit the version code
+11. WHEN the user clicks "Build Package" button, THE System SHALL display a confirmation dialog showing all selected build details
+12. WHEN the user confirms the build, THE System SHALL call the multi build package by plan API with the constructed request body
+13. THE System SHALL include the x-mo-target-tenant header with the current tenant code in the build API request
+14. THE System SHALL include the authorization header with the current bearer token in the build API request
+15. WHEN the build request succeeds, THE System SHALL display a success message with the build details
+16. WHEN the build request fails, THE System SHALL display an error message with the failure reason
+
+### Requirement 11A: Branch Selection with Filtering
+
+**User Story:** As a developer, I want to select a branch from a filterable dropdown, so that I can quickly find the branch I need.
+
+#### Acceptance Criteria
+
+1. THE System SHALL display a branch dropdown in the Build Package dialog
+2. THE System SHALL populate the branch dropdown with values from the branch_list field in the tenant configuration API response
+3. THE System SHALL support keyword filtering in the branch dropdown that filters options as the user types
+4. THE System SHALL perform case-insensitive substring matching for branch filtering
+5. THE System SHALL allow the user to select exactly one branch
+
+### Requirement 11B: Version Code Generation
+
+**User Story:** As a developer, I want automatic version code generation with timestamp, so that each build has a unique identifier.
+
+#### Acceptance Criteria
+
+1. THE System SHALL provide a version code text field in the Build Package dialog
+2. WHEN the Build Package dialog opens, THE System SHALL generate a default version code using the first branch in the branch list
+3. THE default version code SHALL follow the format "{branch}_{timestamp}" where branch is the selected branch name and timestamp is in yyyyMMddHHmmss format
+4. WHEN the user changes the selected branch, THE System SHALL regenerate the version code with the new branch name and current timestamp
+5. THE System SHALL allow the user to manually edit the version code field
+6. THE System SHALL validate that the version code is not empty before allowing build submission
+
+### Requirement 11C: Application Selection with Tenant Filtering
+
+**User Story:** As a developer, I want to select multiple applications to build, so that I can create coordinated releases.
+
+#### Acceptance Criteria
+
+1. THE System SHALL display a list of applications with checkboxes in the Build Package dialog
+2. THE System SHALL filter the application list to show only applications whose app_name starts with the current tenant code
+3. THE System SHALL support multi-selection by allowing users to check multiple application checkboxes
+4. THE System SHALL provide a "Select All" checkbox to select or deselect all applications at once
+5. THE System SHALL validate that at least one application is selected before allowing build submission
+6. THE System SHALL display the application names in alphabetical order
+
+### Requirement 11D: Build Confirmation
+
+**User Story:** As a developer, I want to review build details before submission, so that I can verify the configuration is correct.
+
+#### Acceptance Criteria
+
+1. WHEN the user clicks "Build Package" button, THE System SHALL validate that a branch is selected, version code is not empty, and at least one application is selected
+2. WHEN validation passes, THE System SHALL display a confirmation dialog
+3. THE confirmation dialog SHALL display the selected branch, version code, and list of selected applications
+4. THE confirmation dialog SHALL provide "Confirm" and "Cancel" buttons
+5. WHEN the user clicks "Cancel", THE System SHALL close the confirmation dialog and return to the Build Package dialog
+6. WHEN the user clicks "Confirm", THE System SHALL proceed with the build API call
+
+### Requirement 11E: Build API Request Construction
+
+**User Story:** As a system, I want to construct the correct API request format, so that the Portal API can process the build request.
+
+#### Acceptance Criteria
+
+1. THE System SHALL construct a JSON request body with an "apps" array containing one object per selected application
+2. FOR EACH selected application, THE System SHALL create an object with fields: app_name, build_type, git_branch, issues, popconVisible, user_name, and version
+3. THE System SHALL set build_type to "build_only" for all applications
+4. THE System SHALL set git_branch to the selected branch for all applications
+5. THE System SHALL set issues to an empty array for all applications
+6. THE System SHALL set popconVisible to false for all applications
+7. THE System SHALL set user_name to the current tenant code for all applications
+8. THE System SHALL set version to the entered version code for all applications
+9. THE System SHALL include top-level fields: description (empty string), need_release_plan (false), plan_id (empty string), and title (same as version code)
+10. THE System SHALL call the POST /api/mo-fo/1.0/ops/multi_build API endpoint with the constructed request body
+
+### Requirement 11F: Tenant Configuration API
+
+**User Story:** As a system, I want to retrieve tenant configuration including branch list, so that I can populate the branch dropdown.
+
+#### Acceptance Criteria
+
+1. THE System SHALL call the GET /api/mo-fo/1.0/ops/tenant_config API when the Build Package dialog opens
+2. THE System SHALL include the x-mo-target-tenant header with the current tenant code
+3. THE System SHALL include the authorization header with the current bearer token
+4. THE System SHALL extract the branch_list field from the API response
+5. WHEN the API call fails, THE System SHALL display an error message and disable the branch dropdown
+
+### Requirement 11G: Modern UI Design
+
+**User Story:** As a developer, I want a modern and visually appealing build interface, so that the application feels contemporary and professional.
+
+#### Acceptance Criteria
+
+1. THE Build Package dialog SHALL use a modern, flat design style consistent with the Tenant CI/CD dialog
+2. THE System SHALL use the same button styling as the Tenant CI/CD dialog buttons
+3. THE System SHALL use consistent fonts, colors, and spacing with the existing Tenant CI/CD interface
+4. THE System SHALL use modern UI components including rounded corners and subtle shadows where appropriate
+5. THE System SHALL ensure the dialog layout is clean and uncluttered with proper whitespace
 
 ### Requirement 12: API Authentication
 
