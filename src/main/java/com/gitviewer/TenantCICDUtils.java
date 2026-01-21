@@ -169,15 +169,19 @@ public class TenantCICDUtils {
      * 解析带有子租户代码的租户代码字符串
      * Parse tenant codes with sub-tenant codes (workspaces)
      * 
-     * Supports two formats:
+     * Supports multiple formats:
      * 1. Simple format: "tenant1,tenant2,tenant3"
-     * 2. With sub-tenants: "tenant{sub1/sub2/sub3},tenant2"
-     * 3. Mixed format: "tenant1{sub1/sub2},tenant2,tenant3{sub3/sub4}"
+     * 2. With sub-tenants using {}: "tenant{sub1/sub2/sub3},tenant2"
+     * 3. With sub-tenants using []: "tenant[sub1/sub2/sub3],tenant2"
+     * 4. With sub-tenants using (): "tenant(sub1/sub2/sub3),tenant2"
+     * 5. Mixed format: "tenant1{sub1/sub2},tenant2[sub3/sub4],tenant3(sub5/sub6)"
      * 
      * Examples:
      * - "stbd,thailife" -> {"stbd": [], "thailife": []}
      * - "stbd{stbddev/stbdtst}" -> {"stbd": ["stbddev", "stbdtst"]}
-     * - "stbd{stbddev/stbdtst},thailife{thailifedev/thailifetest}" -> 
+     * - "stbd[stbddev/stbdtst]" -> {"stbd": ["stbddev", "stbdtst"]}
+     * - "stbd(stbddev/stbdtst)" -> {"stbd": ["stbddev", "stbdtst"]}
+     * - "stbd{stbddev/stbdtst},thailife[thailifedev/thailifetest]" -> 
      *   {"stbd": ["stbddev", "stbdtst"], "thailife": ["thailifedev", "thailifetest"]}
      * 
      * @param tenantCodesStr 租户代码字符串
@@ -203,37 +207,59 @@ public class TenantCICDUtils {
                 continue;
             }
             
-            // 检查是否包含子租户代码（格式：tenant{sub1/sub2}）
+            // 检查是否包含子租户代码（支持三种括号格式：{}, [], ()）
+            char openBracket = '\0';
+            char closeBracket = '\0';
+            int braceStart = -1;
+            int braceEnd = -1;
+            
+            // 检查 {} 格式
             if (tenantPart.contains("{") && tenantPart.contains("}")) {
-                int braceStart = tenantPart.indexOf("{");
-                int braceEnd = tenantPart.indexOf("}");
+                openBracket = '{';
+                closeBracket = '}';
+                braceStart = tenantPart.indexOf("{");
+                braceEnd = tenantPart.indexOf("}");
+            }
+            // 检查 [] 格式
+            else if (tenantPart.contains("[") && tenantPart.contains("]")) {
+                openBracket = '[';
+                closeBracket = ']';
+                braceStart = tenantPart.indexOf("[");
+                braceEnd = tenantPart.indexOf("]");
+            }
+            // 检查 () 格式
+            else if (tenantPart.contains("(") && tenantPart.contains(")")) {
+                openBracket = '(';
+                closeBracket = ')';
+                braceStart = tenantPart.indexOf("(");
+                braceEnd = tenantPart.indexOf(")");
+            }
+            
+            if (braceStart >= 0 && braceEnd > braceStart) {
+                // 提取租户代码
+                String tenantCode = tenantPart.substring(0, braceStart).trim();
                 
-                if (braceStart < braceEnd) {
-                    // 提取租户代码
-                    String tenantCode = tenantPart.substring(0, braceStart).trim();
-                    
-                    // 提取子租户代码
-                    String subTenantsStr = tenantPart.substring(braceStart + 1, braceEnd).trim();
-                    
-                    // 按斜杠分割子租户代码
-                    String[] subTenants = subTenantsStr.split("/");
-                    List<String> subTenantList = new ArrayList<>();
-                    
-                    for (String subTenant : subTenants) {
-                        subTenant = subTenant.trim();
-                        if (!subTenant.isEmpty()) {
-                            subTenantList.add(subTenant);
-                        }
+                // 提取子租户代码
+                String subTenantsStr = tenantPart.substring(braceStart + 1, braceEnd).trim();
+                
+                // 按斜杠分割子租户代码
+                String[] subTenants = subTenantsStr.split("/");
+                List<String> subTenantList = new ArrayList<>();
+                
+                for (String subTenant : subTenants) {
+                    subTenant = subTenant.trim();
+                    if (!subTenant.isEmpty()) {
+                        subTenantList.add(subTenant);
                     }
-                    
-                    result.put(tenantCode, subTenantList);
-                    logger.info("parseTenantCodesWithSubTenants: Parsed tenant '{}' with {} sub-tenants: {}", 
-                               tenantCode, subTenantList.size(), subTenantList);
-                } else {
-                    // 格式错误，作为简单租户代码处理
-                    logger.warn("parseTenantCodesWithSubTenants: Malformed tenant code '{}', treating as simple tenant", tenantPart);
-                    result.put(tenantPart, new ArrayList<>());
                 }
+                
+                result.put(tenantCode, subTenantList);
+                logger.info("parseTenantCodesWithSubTenants: Parsed tenant '{}' with {} sub-tenants using '{}{}' brackets: {}", 
+                           tenantCode, subTenantList.size(), openBracket, closeBracket, subTenantList);
+            } else if (braceStart >= 0) {
+                // 格式错误（有开括号但没有闭括号或顺序错误），作为简单租户代码处理
+                logger.warn("parseTenantCodesWithSubTenants: Malformed tenant code '{}', treating as simple tenant", tenantPart);
+                result.put(tenantPart, new ArrayList<>());
             } else {
                 // 简单格式，没有子租户代码
                 result.put(tenantPart, new ArrayList<>());

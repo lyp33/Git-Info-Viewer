@@ -9,6 +9,7 @@ public class JenkinsStage {
     private String status;  // SUCCESS, FAILED, IN_PROGRESS, NOT_EXECUTED, ABORTED
     private long durationMillis;
     private Integer stageBuildNumber;  // Stage 的 Build ID
+    private JenkinsBuild buildInfo;  // 关联的 Build 信息（用于合成 stage）
 
     public JenkinsStage() {
     }
@@ -125,5 +126,19 @@ public class JenkinsStage {
      */
     public boolean hasStageBuildId() {
         return stageBuildNumber != null && stageBuildNumber > 0;
+    }
+
+    /**
+     * 获取关联的 Build 信息
+     */
+    public JenkinsBuild getBuildInfo() {
+        return buildInfo;
+    }
+
+    /**
+     * 设置关联的 Build 信息
+     */
+    public void setBuildInfo(JenkinsBuild buildInfo) {
+        this.buildInfo = buildInfo;
     }
 }

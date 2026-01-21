@@ -110,11 +110,15 @@ public class DeploymentPodListDialog extends JDialog {
         podTable.setSelectionForeground(Color.BLACK);
         
         // 设置列宽
-        int[] widths = {300, 150, 200, 150, 150};
+        int[] widths = {300, 150, 200, 150, 150, 400};  // 添加Image列宽度400
         for (int i = 0; i < widths.length && i < podTable.getColumnCount(); i++) {
             TableColumn column = podTable.getColumnModel().getColumn(i);
             column.setPreferredWidth(widths[i]);
         }
+        
+        // 为Image列（第5列）设置自定义渲染器，支持换行显示
+        TableColumn imageColumn = podTable.getColumnModel().getColumn(5);
+        imageColumn.setCellRenderer(new MultiLineTableCellRenderer());
         
         // 双击查看日志
         podTable.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -280,7 +284,7 @@ public class DeploymentPodListDialog extends JDialog {
      */
     private static class PodTableModel extends AbstractTableModel {
         private List<DeploymentPod> pods;
-        private String[] columnNames = {"Name", "Namespace", "Creation Time", "App", "Status"};
+        private String[] columnNames = {"Name", "Namespace", "Creation Time", "App", "Status", "Image"};
         
         public PodTableModel() {
             this.pods = new ArrayList<>();
@@ -332,9 +336,55 @@ public class DeploymentPodListDialog extends JDialog {
                     return pod.getApp();
                 case 4:
                     return pod.getRealStatus();
+                case 5:
+                    return pod.getImage();
                 default:
                     return "";
             }
+        }
+    }
+    
+    /**
+     * 多行文本单元格渲染器
+     * Multi-line table cell renderer for wrapping long text
+     */
+    private static class MultiLineTableCellRenderer extends JTextArea implements javax.swing.table.TableCellRenderer {
+        
+        public MultiLineTableCellRenderer() {
+            setLineWrap(true);
+            setWrapStyleWord(true);
+            setOpaque(true);
+            setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        }
+        
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                                                      boolean isSelected, boolean hasFocus,
+                                                      int row, int column) {
+            setText(value != null ? value.toString() : "");
+            
+            if (isSelected) {
+                setBackground(new Color(66, 133, 244, 50));
+                setForeground(Color.BLACK);
+            } else {
+                setBackground(Color.WHITE);
+                setForeground(Color.BLACK);
+            }
+            
+            // 设置边框
+            if (hasFocus) {
+                setBorder(BorderFactory.createLineBorder(new Color(66, 133, 244), 1));
+            } else {
+                setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5));
+            }
+            
+            // 根据内容自动调整行高
+            setSize(table.getColumnModel().getColumn(column).getWidth(), getPreferredSize().height);
+            if (table.getRowHeight(row) < getPreferredSize().height) {
+                table.setRowHeight(row, getPreferredSize().height);
+            }
+            
+            return this;
         }
     }
 }

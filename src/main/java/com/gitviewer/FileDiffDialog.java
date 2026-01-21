@@ -6,6 +6,8 @@ import java.awt.*;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 文件差异对比对话框
@@ -23,6 +25,8 @@ public class FileDiffDialog extends JDialog {
     private JTextPane afterTextPane;
     private JScrollPane beforeScrollPane;
     private JScrollPane afterScrollPane;
+    private JTextArea beforeLineNumbers;  // 左侧行号显示区域
+    private JTextArea afterLineNumbers;   // 右侧行号显示区域
     private File repoDirectory;
     private String filePath;
     private String commitId;
@@ -129,6 +133,19 @@ public class FileDiffDialog extends JDialog {
         titleLabel.setOpaque(true);
         panel.add(titleLabel, BorderLayout.NORTH);
         
+        // 创建行号显示区域
+        JTextArea lineNumberArea = new JTextArea();
+        lineNumberArea.setEditable(false);
+        lineNumberArea.setFocusable(false);
+        lineNumberArea.setFont(new Font("Consolas", Font.PLAIN, 11));
+        lineNumberArea.setBackground(new Color(245, 245, 245));
+        lineNumberArea.setForeground(new Color(102, 102, 102));
+        lineNumberArea.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(0, 0, 0, 1, BORDER_COLOR),
+            BorderFactory.createEmptyBorder(10, 5, 10, 5)
+        ));
+        lineNumberArea.setPreferredSize(new Dimension(60, Integer.MAX_VALUE));
+        
         // 文本面板
         JTextPane textPane = new JTextPane();
         textPane.setEditable(false);
@@ -137,14 +154,18 @@ public class FileDiffDialog extends JDialog {
         
         JScrollPane scrollPane = new JScrollPane(textPane);
         scrollPane.setBorder(null);
+        // 将行号区域设置为 row header，实现自动滚动同步
+        scrollPane.setRowHeaderView(lineNumberArea);
         panel.add(scrollPane, BorderLayout.CENTER);
         
         if (isBefore) {
             beforeTextPane = textPane;
             beforeScrollPane = scrollPane;
+            beforeLineNumbers = lineNumberArea;
         } else {
             afterTextPane = textPane;
             afterScrollPane = scrollPane;
+            afterLineNumbers = lineNumberArea;
         }
         
         return panel;
@@ -259,20 +280,36 @@ public class FileDiffDialog extends JDialog {
         }
         
         String[] lines = diff.split("\n");
-        List<String> beforeLines = new ArrayList<>();
-        List<String> afterLines = new ArrayList<>();
-        List<LineType> beforeTypes = new ArrayList<>();
-        List<LineType> afterTypes = new ArrayList<>();
+        
+        // 行号追踪
+        int currentBeforeLine = 0;
+        int currentAfterLine = 0;
+        boolean inHunk = false;
         
         // 临时存储连续的删除和添加行
         List<String> pendingRemovals = new ArrayList<>();
         List<String> pendingAdditions = new ArrayList<>();
+        List<Integer> pendingRemovalLineNums = new ArrayList<>();
+        List<Integer> pendingAdditionLineNums = new ArrayList<>();
         
         for (String line : lines) {
             if (line.startsWith("@@")) {
-                // 跳过hunk头
+                // 解析 hunk header 获取起始行号
+                HunkInfo hunk = HunkInfo.parse(line);
+                if (hunk != null) {
+                    currentBeforeLine = hunk.oldStart;
+                    currentAfterLine = hunk.newStart;
+                    inHunk = true;
+                }
                 continue;
-            } else if (line.startsWith("---") || line.startsWith("+++")) {
+            }
+            
+            if (!inHunk) {
+                // 还没遇到 hunk header，跳过
+                continue;
+            }
+            
+            if (line.startsWith("---") || line.startsWith("+++")) {
                 // 跳过文件头
                 continue;
             } else if (line.startsWith("diff --git")) {
@@ -281,31 +318,37 @@ public class FileDiffDialog extends JDialog {
             } else if (line.startsWith("-")) {
                 // 删除的行 - 暂存
                 pendingRemovals.add(line.substring(1));
+                pendingRemovalLineNums.add(currentBeforeLine);
+                currentBeforeLine++;
             } else if (line.startsWith("+")) {
                 // 添加的行 - 暂存
                 pendingAdditions.add(line.substring(1));
+                pendingAdditionLineNums.add(currentAfterLine);
+                currentAfterLine++;
             } else {
                 // 未改变的行 - 先处理之前暂存的删除和添加
-                processPendingChanges(beforeLines, afterLines, beforeTypes, afterTypes, 
-                                     pendingRemovals, pendingAdditions);
+                processPendingChanges(data, 
+                                     pendingRemovals, pendingAdditions,
+                                     pendingRemovalLineNums, pendingAdditionLineNums);
                 
                 // 添加未改变的行
                 String content = line.startsWith(" ") ? line.substring(1) : line;
-                beforeLines.add(content);
-                afterLines.add(content);
-                beforeTypes.add(LineType.UNCHANGED);
-                afterTypes.add(LineType.UNCHANGED);
+                data.beforeLines.add(content);
+                data.afterLines.add(content);
+                data.beforeTypes.add(LineType.UNCHANGED);
+                data.afterTypes.add(LineType.UNCHANGED);
+                data.beforeLineNumbers.add(currentBeforeLine);
+                data.afterLineNumbers.add(currentAfterLine);
+                
+                currentBeforeLine++;
+                currentAfterLine++;
             }
         }
         
         // 处理最后剩余的删除和添加
-        processPendingChanges(beforeLines, afterLines, beforeTypes, afterTypes, 
-                             pendingRemovals, pendingAdditions);
-        
-        data.beforeLines = beforeLines;
-        data.afterLines = afterLines;
-        data.beforeTypes = beforeTypes;
-        data.afterTypes = afterTypes;
+        processPendingChanges(data,
+                             pendingRemovals, pendingAdditions,
+                             pendingRemovalLineNums, pendingAdditionLineNums);
         
         return data;
     }
@@ -313,9 +356,11 @@ public class FileDiffDialog extends JDialog {
     /**
      * 处理暂存的删除和添加行，确保左右对齐
      */
-    private void processPendingChanges(List<String> beforeLines, List<String> afterLines,
-                                      List<LineType> beforeTypes, List<LineType> afterTypes,
-                                      List<String> pendingRemovals, List<String> pendingAdditions) {
+    private void processPendingChanges(DiffData data,
+                                      List<String> pendingRemovals,
+                                      List<String> pendingAdditions,
+                                      List<Integer> pendingRemovalLineNums,
+                                      List<Integer> pendingAdditionLineNums) {
         if (pendingRemovals.isEmpty() && pendingAdditions.isEmpty()) {
             return;
         }
@@ -325,28 +370,34 @@ public class FileDiffDialog extends JDialog {
         for (int i = 0; i < maxLines; i++) {
             // 左侧（删除的行）
             if (i < pendingRemovals.size()) {
-                beforeLines.add(pendingRemovals.get(i));
-                beforeTypes.add(LineType.REMOVED);
+                data.beforeLines.add(pendingRemovals.get(i));
+                data.beforeTypes.add(LineType.REMOVED);
+                data.beforeLineNumbers.add(pendingRemovalLineNums.get(i));
             } else {
                 // 右侧有新增但左侧没有对应删除，添加空行
-                beforeLines.add("");
-                beforeTypes.add(LineType.EMPTY);
+                data.beforeLines.add("");
+                data.beforeTypes.add(LineType.EMPTY);
+                data.beforeLineNumbers.add(null);  // EMPTY 行没有行号
             }
             
             // 右侧（添加的行）
             if (i < pendingAdditions.size()) {
-                afterLines.add(pendingAdditions.get(i));
-                afterTypes.add(LineType.ADDED);
+                data.afterLines.add(pendingAdditions.get(i));
+                data.afterTypes.add(LineType.ADDED);
+                data.afterLineNumbers.add(pendingAdditionLineNums.get(i));
             } else {
                 // 左侧有删除但右侧没有对应添加，添加空行
-                afterLines.add("");
-                afterTypes.add(LineType.EMPTY);
+                data.afterLines.add("");
+                data.afterTypes.add(LineType.EMPTY);
+                data.afterLineNumbers.add(null);  // EMPTY 行没有行号
             }
         }
         
         // 清空暂存列表
         pendingRemovals.clear();
         pendingAdditions.clear();
+        pendingRemovalLineNums.clear();
+        pendingAdditionLineNums.clear();
     }
     
     private void displayDiff(DiffData data) {
@@ -356,12 +407,16 @@ public class FileDiffDialog extends JDialog {
             return;
         }
         
-        // 显示前后对比
-        displayColoredText(beforeTextPane, data.beforeLines, data.beforeTypes);
-        displayColoredText(afterTextPane, data.afterLines, data.afterTypes);
+        // 显示前后对比（包含行号）
+        displayColoredText(beforeTextPane, beforeLineNumbers, 
+                          data.beforeLines, data.beforeTypes, data.beforeLineNumbers);
+        displayColoredText(afterTextPane, afterLineNumbers,
+                          data.afterLines, data.afterTypes, data.afterLineNumbers);
     }
     
-    private void displayColoredText(JTextPane textPane, List<String> lines, List<LineType> types) {
+    private void displayColoredText(JTextPane textPane, JTextArea lineNumberArea,
+                                    List<String> lines, List<LineType> types, 
+                                    List<Integer> lineNumbers) {
         StyledDocument doc = textPane.getStyledDocument();
         
         try {
@@ -396,6 +451,22 @@ public class FileDiffDialog extends JDialog {
         } catch (BadLocationException e) {
             e.printStackTrace();
         }
+        
+        // 生成并设置行号
+        if (lineNumberArea != null && lineNumbers != null) {
+            StringBuilder lineNumText = new StringBuilder();
+            for (Integer lineNum : lineNumbers) {
+                if (lineNum != null) {
+                    // 右对齐，5位数字
+                    lineNumText.append(String.format("%5d", lineNum)).append("\n");
+                } else {
+                    // EMPTY 行显示空白
+                    lineNumText.append("     \n");
+                }
+            }
+            lineNumberArea.setText(lineNumText.toString());
+            lineNumberArea.setCaretPosition(0);
+        }
     }
     
     private enum LineType {
@@ -407,6 +478,44 @@ public class FileDiffDialog extends JDialog {
         List<String> afterLines = new ArrayList<>();
         List<LineType> beforeTypes = new ArrayList<>();
         List<LineType> afterTypes = new ArrayList<>();
+        List<Integer> beforeLineNumbers = new ArrayList<>();  // 源文件行号（左侧）
+        List<Integer> afterLineNumbers = new ArrayList<>();   // 源文件行号（右侧）
+    }
+    
+    /**
+     * Hunk 信息类
+     * 用于解析 Git diff 的 hunk header: @@ -oldStart,oldCount +newStart,newCount @@
+     */
+    private static class HunkInfo {
+        int oldStart;  // 旧文件起始行号
+        int oldCount;  // 旧文件行数
+        int newStart;  // 新文件起始行号
+        int newCount;  // 新文件行数
+        
+        /**
+         * 解析 hunk header
+         * @param hunkHeader hunk header 字符串，格式: @@ -45,8 +46,7 @@
+         * @return HunkInfo 对象，解析失败返回 null
+         */
+        static HunkInfo parse(String hunkHeader) {
+            try {
+                // 正则表达式匹配 hunk header
+                Pattern pattern = Pattern.compile("@@ -(\\d+),(\\d+) \\+(\\d+),(\\d+) @@");
+                Matcher matcher = pattern.matcher(hunkHeader);
+                if (matcher.find()) {
+                    HunkInfo info = new HunkInfo();
+                    info.oldStart = Integer.parseInt(matcher.group(1));
+                    info.oldCount = Integer.parseInt(matcher.group(2));
+                    info.newStart = Integer.parseInt(matcher.group(3));
+                    info.newCount = Integer.parseInt(matcher.group(4));
+                    return info;
+                }
+            } catch (Exception e) {
+                System.err.println("Failed to parse hunk header: " + hunkHeader);
+                e.printStackTrace();
+            }
+            return null;
+        }
     }
     
     /**

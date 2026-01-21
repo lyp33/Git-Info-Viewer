@@ -56,6 +56,7 @@ public class JenkinsBrowserDialog extends JDialog {
      */
     private void initializeUI() {
         setLayout(new BorderLayout(10, 10));
+        getContentPane().setBackground(Color.WHITE);
         setSize(1200, 900);  // 增大尺寸：从 800x700 改为 1200x900
 
         // 创建收藏面板
@@ -68,6 +69,7 @@ public class JenkinsBrowserDialog extends JDialog {
         // 创建主分割面板（上下分割）
         JSplitPane mainSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
         mainSplitPane.setResizeWeight(0.7);  // 上部占70%
+        mainSplitPane.setBorder(null);  // 移除边框，更现代
 
         // 上部：树组件
         DefaultMutableTreeNode root = new DefaultMutableTreeNode("Loading...");
@@ -75,9 +77,10 @@ public class JenkinsBrowserDialog extends JDialog {
         tree = new JTree(treeModel);
         tree.setRootVisible(true);
         tree.setShowsRootHandles(true);
-        tree.setFont(AppSettings.getInstance().getLeftPanelFont());
-        tree.setRowHeight(28);
+        tree.setFont(new Font("Segoe UI", Font.PLAIN, 12));  // 使用现代字体
+        tree.setRowHeight(32);  // 增加行高，更舒适
         tree.setLargeModel(false); // 禁用大模型优化，确保完整渲染
+        tree.setBackground(Color.WHITE);
 
         // 设置自定义渲染器
         tree.setCellRenderer(new FavoriteTreeCellRenderer());
@@ -126,45 +129,107 @@ public class JenkinsBrowserDialog extends JDialog {
             }
         });
 
-        // 添加滚动面板
+        // 添加滚动面板 - 现代化样式
         JScrollPane treeScrollPane = new JScrollPane(tree);
-        javax.swing.border.TitledBorder treeBorder = BorderFactory.createTitledBorder("Jenkins Job Browser");
-        treeBorder.setTitleFont(new Font("Segoe UI", Font.BOLD, 12));
-        treeScrollPane.setBorder(treeBorder);
-        mainSplitPane.setTopComponent(treeScrollPane);
+        treeScrollPane.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createEmptyBorder(10, 15, 5, 15),
+            BorderFactory.createLineBorder(new Color(218, 220, 224), 1)
+        ));
+        treeScrollPane.setBackground(Color.WHITE);
+        
+        // 添加标题标签
+        JLabel treeLabel = new JLabel("Jenkins Job Browser");
+        treeLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        treeLabel.setForeground(new Color(60, 64, 67));
+        treeLabel.setBorder(BorderFactory.createEmptyBorder(10, 15, 5, 15));
+        
+        JPanel treePanel = new JPanel(new BorderLayout());
+        treePanel.setBackground(Color.WHITE);
+        treePanel.add(treeLabel, BorderLayout.NORTH);
+        treePanel.add(treeScrollPane, BorderLayout.CENTER);
+        
+        mainSplitPane.setTopComponent(treePanel);
 
-        // 下部：控制台日志
+        // 下部：控制台日志 - 现代化样式
         consoleArea = new JTextArea();
         consoleArea.setEditable(false);
-        consoleArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        consoleArea.setBackground(Color.BLACK);  // 黑色背景
-        consoleArea.setForeground(Color.WHITE);  // 白色字体
-        consoleArea.setCaretColor(Color.WHITE);  // 白色光标
+        consoleArea.setFont(new Font("Monospaced", Font.PLAIN, 13));  // 增大字体：从 12 改为 13
+        consoleArea.setBackground(new Color(30, 30, 30));  // 深灰色背景，更现代
+        consoleArea.setForeground(new Color(220, 220, 220));  // 浅灰色字体
+        consoleArea.setCaretColor(new Color(220, 220, 220));  // 浅灰色光标
+        consoleArea.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        
         JScrollPane consoleScrollPane = new JScrollPane(consoleArea);
-        javax.swing.border.TitledBorder consoleBorder = BorderFactory.createTitledBorder("Console Log");
-        consoleBorder.setTitleFont(new Font("Segoe UI", Font.BOLD, 12));
-        consoleScrollPane.setBorder(consoleBorder);
-        mainSplitPane.setBottomComponent(consoleScrollPane);
+        consoleScrollPane.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createEmptyBorder(5, 15, 10, 15),
+            BorderFactory.createLineBorder(new Color(218, 220, 224), 1)
+        ));
+        
+        // 添加控制台标题标签
+        JLabel consoleLabel = new JLabel("Console Log");
+        consoleLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        consoleLabel.setForeground(new Color(60, 64, 67));
+        consoleLabel.setBorder(BorderFactory.createEmptyBorder(5, 15, 5, 15));
+        
+        JPanel consolePanel = new JPanel(new BorderLayout());
+        consolePanel.setBackground(Color.WHITE);
+        consolePanel.add(consoleLabel, BorderLayout.NORTH);
+        consolePanel.add(consoleScrollPane, BorderLayout.CENTER);
+        
+        mainSplitPane.setBottomComponent(consolePanel);
 
         // 创建中心面板，包含收藏面板和主分割面板
         JPanel centerPanel = new JPanel(new BorderLayout());
+        centerPanel.setBackground(Color.WHITE);
         centerPanel.add(favoritesPanel, BorderLayout.NORTH);
         centerPanel.add(mainSplitPane, BorderLayout.CENTER);
         
         add(centerPanel, BorderLayout.CENTER);
 
-        // 按钮面板
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        // 按钮面板 - 现代化样式
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        buttonPanel.setBackground(Color.WHITE);
+        buttonPanel.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
         
-        JButton refreshButton = new JButton("Refresh");
+        // Refresh 按钮 - 蓝色
+        JButton refreshButton = new JButton("<html><font color='white'><b>Refresh</b></font></html>");
+        refreshButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        refreshButton.setPreferredSize(new Dimension(100, 35));
+        refreshButton.setBackground(new Color(66, 133, 244));
+        refreshButton.setForeground(Color.WHITE);
+        refreshButton.setOpaque(true);
+        refreshButton.setContentAreaFilled(true);
+        refreshButton.setFocusPainted(false);
+        refreshButton.setBorderPainted(false);
+        refreshButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         refreshButton.addActionListener(e -> loadJobHierarchy());
         buttonPanel.add(refreshButton);
 
-        JButton clearLogButton = new JButton("Clear Log");
+        // Clear Log 按钮 - 橙色
+        JButton clearLogButton = new JButton("<html><font color='white'><b>Clear Log</b></font></html>");
+        clearLogButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        clearLogButton.setPreferredSize(new Dimension(100, 35));
+        clearLogButton.setBackground(new Color(251, 140, 0));
+        clearLogButton.setForeground(Color.WHITE);
+        clearLogButton.setOpaque(true);
+        clearLogButton.setContentAreaFilled(true);
+        clearLogButton.setFocusPainted(false);
+        clearLogButton.setBorderPainted(false);
+        clearLogButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         clearLogButton.addActionListener(e -> consoleArea.setText(""));
         buttonPanel.add(clearLogButton);
 
-        JButton closeButton = new JButton("Close");
+        // Close 按钮 - 灰色
+        JButton closeButton = new JButton("<html><font color='white'><b>Close</b></font></html>");
+        closeButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        closeButton.setPreferredSize(new Dimension(100, 35));
+        closeButton.setBackground(new Color(95, 99, 104));
+        closeButton.setForeground(Color.WHITE);
+        closeButton.setOpaque(true);
+        closeButton.setContentAreaFilled(true);
+        closeButton.setFocusPainted(false);
+        closeButton.setBorderPainted(false);
+        closeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         closeButton.addActionListener(e -> dispose());
         buttonPanel.add(closeButton);
 
@@ -592,8 +657,9 @@ public class JenkinsBrowserDialog extends JDialog {
             if (userObject instanceof JenkinsItem) {
                 JenkinsItem item = (JenkinsItem) userObject;
                 if (!item.isFolder()) {
-                    // 可以选择性地打开详情对话框
-                    // openJobDetails(item);
+                    // 自动打开 Build History 窗口
+                    logToConsole("Auto-opening Build History for: " + item.getName());
+                    openJobDetails(item);
                 }
             }
             
@@ -760,14 +826,14 @@ public class JenkinsBrowserDialog extends JDialog {
                     // Set text, add star if favorited
                     String displayName = item.getName();
                     if (isFavorite && !item.isFolder()) {
-                        setText("\u2B50 " + displayName);
+                        setText("[*] " + displayName);
                     } else {
                         setText(displayName);
                     }
                     
                     // 设置工具提示显示完整名称和路径
                     if (isFavorite && !item.isFolder()) {
-                        setToolTipText("<html><b>★ Favorited:</b> " + displayName + "<br><i>" + jobPath + "</i></html>");
+                        setToolTipText("<html><b>[*] Favorited:</b> " + displayName + "<br><i>" + jobPath + "</i></html>");
                     } else {
                         setToolTipText("<html>" + displayName + "<br><i>" + jobPath + "</i></html>");
                     }

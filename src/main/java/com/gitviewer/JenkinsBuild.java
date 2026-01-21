@@ -149,6 +149,13 @@ public class JenkinsBuild {
             return "";
         }
         
+        // 调试日志：输出所有参数
+        System.out.println("[JenkinsBuild] extractKeyParameters for build #" + number);
+        System.out.println("[JenkinsBuild] Total parameters: " + parameters.size());
+        for (Map.Entry<String, String> entry : parameters.entrySet()) {
+            System.out.println("[JenkinsBuild]   " + entry.getKey() + " = " + entry.getValue());
+        }
+        
         StringBuilder sb = new StringBuilder();
         
         // 优先显示 SERVICE_NAME
@@ -156,12 +163,13 @@ public class JenkinsBuild {
             String serviceName = parameters.get("SERVICE_NAME");
             if (serviceName != null && !serviceName.isEmpty()) {
                 sb.append("SERVICE_NAME: ").append(serviceName);
+                System.out.println("[JenkinsBuild] Added SERVICE_NAME: " + serviceName);
             }
         }
         
-        // 显示 versions 参数（完整版本信息）
-        if (parameters.containsKey("versions")) {
-            String versions = parameters.get("versions");
+        // 显示 versions/VERSIONS 参数（完整版本信息）
+        if (parameters.containsKey("versions") || parameters.containsKey("VERSIONS")) {
+            String versions = parameters.containsKey("versions") ? parameters.get("versions") : parameters.get("VERSIONS");
             if (versions != null && !versions.isEmpty()) {
                 if (sb.length() > 0) {
                     sb.append(", ");
@@ -170,17 +178,49 @@ public class JenkinsBuild {
                 if (versions.length() > 50) {
                     versions = versions.substring(0, 47) + "...";
                 }
-                sb.append("versions: ").append(versions);
+                sb.append("VERSIONS: ").append(versions);
+                System.out.println("[JenkinsBuild] Added VERSIONS: " + versions);
             }
         }
         
-        // 如果已经有 SERVICE_NAME 或 versions，直接返回
+        // 显示 VERSION 参数
+        if (parameters.containsKey("VERSION")) {
+            String version = parameters.get("VERSION");
+            System.out.println("[JenkinsBuild] Found VERSION parameter: " + version);
+            if (version != null && !version.isEmpty()) {
+                if (sb.length() > 0) {
+                    sb.append(", ");
+                }
+                sb.append("VERSION: ").append(version);
+                System.out.println("[JenkinsBuild] Added VERSION: " + version);
+            } else {
+                System.out.println("[JenkinsBuild] VERSION is null or empty");
+            }
+        } else {
+            System.out.println("[JenkinsBuild] VERSION parameter not found");
+        }
+        
+        // 显示 BRANCH 参数
+        if (parameters.containsKey("BRANCH") || parameters.containsKey("branch")) {
+            String branch = parameters.containsKey("BRANCH") ? parameters.get("BRANCH") : parameters.get("branch");
+            if (branch != null && !branch.isEmpty()) {
+                if (sb.length() > 0) {
+                    sb.append(", ");
+                }
+                sb.append("BRANCH: ").append(branch);
+                System.out.println("[JenkinsBuild] Added BRANCH: " + branch);
+            }
+        }
+        
+        // 如果已经有任何参数，返回
         if (sb.length() > 0) {
-            return "[" + sb.toString() + "]";
+            String result = "[" + sb.toString() + "]";
+            System.out.println("[JenkinsBuild] Final result: " + result);
+            return result;
         }
         
         // 否则查找其他关键参数
-        String[] keyNames = {"VERSION", "BRANCH", "TAG", "version", "branch", "tag", "TENANT_NAME"};
+        String[] keyNames = {"TAG", "version", "tag", "TENANT_NAME"};
         
         for (String key : keyNames) {
             if (parameters.containsKey(key)) {

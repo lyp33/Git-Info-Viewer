@@ -30,6 +30,10 @@ public class JenkinsApiClient {
     private String baseUrl;
     private String username;
     private String apiToken;
+    
+    // CSRF Token (Crumb) 缓存
+    private String cachedCrumb = null;
+    private String cachedCrumbField = null;
 
     public JenkinsApiClient(String baseUrl, String username, String apiToken) {
         this.baseUrl = baseUrl != null ? baseUrl.replaceAll("/+$", "") : "";  // 移除末尾的斜杠
@@ -46,6 +50,50 @@ public class JenkinsApiClient {
         }
         String auth = username + ":" + apiToken;
         return "Basic " + Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
+    }
+    
+    /**
+     * 获取 Jenkins Crumb（CSRF Token）
+     * 用于 POST 请求的 CSRF 保护
+     * 
+     * @return 是否成功获取 Crumb
+     */
+    private boolean fetchCrumb() {
+        try {
+            String crumbUrl = baseUrl + "/crumbIssuer/api/json";
+            logger.info("=== Fetching Jenkins Crumb ===");
+            logger.info("Crumb URL: {}", crumbUrl);
+            System.out.println("[JenkinsApiClient] === Fetching Jenkins Crumb ===");
+            System.out.println("[JenkinsApiClient] Crumb URL: " + crumbUrl);
+            
+            String response = sendGetRequest(crumbUrl);
+            logger.info("Crumb response received, length: {}", response.length());
+            System.out.println("[JenkinsApiClient] Crumb response: " + response);
+            
+            JSONObject json = new JSONObject(response);
+            
+            if (json.has("crumb") && json.has("crumbRequestField")) {
+                cachedCrumb = json.getString("crumb");
+                cachedCrumbField = json.getString("crumbRequestField");
+                logger.info("✓ Successfully fetched crumb: field={}, value={}", cachedCrumbField, cachedCrumb);
+                System.out.println("[JenkinsApiClient] ✓ Crumb field: " + cachedCrumbField);
+                System.out.println("[JenkinsApiClient] ✓ Crumb value: " + cachedCrumb);
+                return true;
+            } else {
+                logger.warn("✗ Crumb response missing required fields");
+                System.out.println("[JenkinsApiClient] ✗ Crumb response missing required fields");
+                return false;
+            }
+        } catch (Exception e) {
+            logger.warn("✗ Failed to fetch Jenkins crumb (CSRF may be disabled): {}", e.getMessage());
+            System.out.println("[JenkinsApiClient] ✗ Failed to fetch crumb: " + e.getMessage());
+            e.printStackTrace();
+            // 如果获取 Crumb 失败，可能是 Jenkins 没有启用 CSRF 保护
+            // 继续执行，不抛出异常
+            cachedCrumb = null;
+            cachedCrumbField = null;
+            return false;
+        }
     }
 
     /**
@@ -93,7 +141,18 @@ public class JenkinsApiClient {
      * 发送 POST 请求
      */
     private String sendPostRequest(String urlString, String postData) throws IOException {
-        logger.info("POST request to: {}", urlString);
+        logger.info("=== POST Request ===");
+        logger.info("POST URL: {}", urlString);
+        System.out.println("[JenkinsApiClient] === POST Request ===");
+        System.out.println("[JenkinsApiClient] POST URL: " + urlString);
+        
+        // 如果还没有获取 Crumb，先获取
+        if (cachedCrumb == null) {
+            System.out.println("[JenkinsApiClient] No cached crumb, fetching...");
+            fetchCrumb();
+        } else {
+            System.out.println("[JenkinsApiClient] Using cached crumb: " + cachedCrumb);
+        }
         
         URL url = new URL(urlString);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -104,9 +163,21 @@ public class JenkinsApiClient {
         String authHeader = getAuthHeader();
         if (authHeader != null) {
             conn.setRequestProperty("Authorization", authHeader);
+            System.out.println("[JenkinsApiClient] ✓ Added Authorization header");
+        }
+        
+        // 添加 CSRF Token (Crumb)
+        if (cachedCrumb != null && cachedCrumbField != null) {
+            conn.setRequestProperty(cachedCrumbField, cachedCrumb);
+            logger.info("✓ Added crumb header: {}={}", cachedCrumbField, cachedCrumb);
+            System.out.println("[JenkinsApiClient] ✓ Added crumb header: " + cachedCrumbField + "=" + cachedCrumb);
+        } else {
+            logger.warn("✗ No crumb available to add to request");
+            System.out.println("[JenkinsApiClient] ✗ No crumb available to add to request");
         }
         
         if (postData != null && !postData.isEmpty()) {
+            System.out.println("[JenkinsApiClient] POST data length: " + postData.length());
             try (OutputStream os = conn.getOutputStream()) {
                 byte[] input = postData.getBytes(StandardCharsets.UTF_8);
                 os.write(input, 0, input.length);
@@ -115,14 +186,35 @@ public class JenkinsApiClient {
         
         int responseCode = conn.getResponseCode();
         logger.info("Response code: {}", responseCode);
+        System.out.println("[JenkinsApiClient] Response code: " + responseCode);
+        
+        // 如果返回 403 且之前有 Crumb，可能是 Crumb 过期，尝试重新获取
+        if (responseCode == HttpURLConnection.HTTP_FORBIDDEN && cachedCrumb != null) {
+            logger.warn("Got 403 with crumb, attempting to refresh crumb and retry...");
+            System.out.println("[JenkinsApiClient] ⚠ Got 403 with crumb, refreshing and retrying...");
+            cachedCrumb = null;
+            cachedCrumbField = null;
+            
+            // 重新获取 Crumb 并重试一次
+            if (fetchCrumb()) {
+                logger.info("Crumb refreshed, retrying POST request...");
+                System.out.println("[JenkinsApiClient] Crumb refreshed, retrying POST...");
+                conn.disconnect();
+                return sendPostRequest(urlString, postData);  // 递归重试
+            }
+        }
         
         if (responseCode == HttpURLConnection.HTTP_UNAUTHORIZED || responseCode == HttpURLConnection.HTTP_FORBIDDEN) {
+            System.out.println("[JenkinsApiClient] ✗ Authentication/Authorization failed");
             throw new IOException("Authentication failed. Please check your Jenkins credentials.");
         }
         
         if (responseCode != HttpURLConnection.HTTP_OK && responseCode != HttpURLConnection.HTTP_CREATED) {
+            System.out.println("[JenkinsApiClient] ✗ Unexpected response code: " + responseCode);
             throw new IOException("HTTP error code: " + responseCode);
         }
+        
+        System.out.println("[JenkinsApiClient] ✓ POST request successful");
         
         BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
         String inputLine;

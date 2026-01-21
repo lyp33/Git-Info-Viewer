@@ -376,7 +376,7 @@ public class FavoritesPanel extends JPanel {
                 String jobPath = job.getJobPath();
                 
                 // Use star icon for favorite
-                String displayText = "★ " + jobPath;
+                String displayText = "[*] " + jobPath;
                 
                 setText(displayText);
                 

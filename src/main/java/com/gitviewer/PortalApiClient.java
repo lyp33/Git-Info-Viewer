@@ -1087,53 +1087,50 @@ public class PortalApiClient {
      */
     private TenantConfig parseTenantConfig(String response) {
         logger.debug("Parsing tenant configuration response");
+        System.out.println("[PortalApiClient] === Parsing Tenant Configuration ===");
+        System.out.println("[PortalApiClient] Response: " + response);
         
         TenantConfig config = new TenantConfig();
         
         try {
             JSONObject json = new JSONObject(response);
+            System.out.println("[PortalApiClient] Parsed JSON successfully");
             
             config.setId(json.optString("id", ""));
             config.setUserName(json.optString("user_name", ""));
             config.setDefaultBranch(json.optString("default_branch", ""));
             
+            System.out.println("[PortalApiClient] Basic fields parsed: id=" + config.getId() + 
+                             ", userName=" + config.getUserName() + 
+                             ", defaultBranch=" + config.getDefaultBranch());
+            
             // 解析分支列表
+            System.out.println("[PortalApiClient] Parsing branch_list...");
             JSONArray branchArray = json.optJSONArray("branch_list");
+            System.out.println("[PortalApiClient] branch_list type: " + 
+                             (branchArray != null ? "JSONArray" : "null"));
+            
             if (branchArray != null) {
+                System.out.println("[PortalApiClient] branch_list length: " + branchArray.length());
                 List<String> branches = new ArrayList<>();
                 for (int i = 0; i < branchArray.length(); i++) {
-                    branches.add(branchArray.getString(i));
+                    String branch = branchArray.getString(i);
+                    branches.add(branch);
+                    System.out.println("[PortalApiClient] Branch[" + i + "]: " + branch);
                 }
                 config.setBranchList(branches);
                 logger.info("Loaded {} branches for tenant {}", branches.size(), config.getUserName());
+                System.out.println("[PortalApiClient] ✓ Loaded " + branches.size() + " branches");
             } else {
                 logger.warn("No branch_list found in response");
+                System.out.println("[PortalApiClient] ⚠ No branch_list found in response");
             }
             
-            // 解析部署管道配置
-            JSONObject deployPipelineJson = json.optJSONObject("deploy_pipeline");
-            if (deployPipelineJson != null) {
-                TenantConfig.DeployPipeline deployPipeline = new TenantConfig.DeployPipeline();
-                
-                JSONArray pipelineArray = deployPipelineJson.optJSONArray("pipeline");
-                if (pipelineArray != null) {
-                    List<TenantConfig.PipelineEntry> pipelineEntries = new ArrayList<>();
-                    for (int i = 0; i < pipelineArray.length(); i++) {
-                        JSONObject entryJson = pipelineArray.getJSONObject(i);
-                        TenantConfig.PipelineEntry entry = new TenantConfig.PipelineEntry();
-                        entry.setEnvName(entryJson.optString("env_name", ""));
-                        pipelineEntries.add(entry);
-                    }
-                    deployPipeline.setPipeline(pipelineEntries);
-                    logger.info("Loaded {} pipeline entries for tenant {}", pipelineEntries.size(), config.getUserName());
-                }
-                
-                config.setDeployPipeline(deployPipeline);
-            } else {
-                logger.debug("No deploy_pipeline found in response");
-            }
+            System.out.println("[PortalApiClient] ✓ Tenant configuration parsed successfully");
         } catch (Exception e) {
             logger.error("Failed to parse tenant configuration response", e);
+            System.out.println("[PortalApiClient] ✗ Failed to parse tenant configuration: " + e.getMessage());
+            e.printStackTrace();
             throw new RuntimeException("Failed to parse tenant configuration: " + e.getMessage(), e);
         }
         
@@ -1239,6 +1236,18 @@ public class PortalApiClient {
                         if (annotations != null) {
                             pod.setApp(annotations.optString("app", ""));
                             pod.setRealStatus(annotations.optString("real_status", ""));
+                        }
+                        
+                        // 提取spec.containers[0].image
+                        JSONObject spec = item.optJSONObject("spec");
+                        if (spec != null) {
+                            JSONArray containers = spec.optJSONArray("containers");
+                            if (containers != null && containers.length() > 0) {
+                                JSONObject firstContainer = containers.getJSONObject(0);
+                                String image = firstContainer.optString("image", "");
+                                pod.setImage(image);
+                                logger.debug("Extracted image: {}", image);
+                            }
                         }
                         
                         pods.add(pod);

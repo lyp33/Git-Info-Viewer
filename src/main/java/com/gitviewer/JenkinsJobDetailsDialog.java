@@ -41,25 +41,51 @@ public class JenkinsJobDetailsDialog extends JDialog {
      * 初始化 UI
      */
     private void initializeUI() {
-        setLayout(new BorderLayout(5, 5));
+        setLayout(new BorderLayout(0, 0));
+        getContentPane().setBackground(Color.WHITE);
         setSize(1400, 900);  // 增大尺寸：从 1000x700 改为 1400x900
 
-        // 顶部面板 - 作业信息和按钮
-        JPanel topPanel = new JPanel(new BorderLayout(10, 0));
-        topPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 5, 10));
+        // 顶部面板 - 作业信息和按钮 - 现代化样式
+        JPanel topPanel = new JPanel(new BorderLayout(15, 0));
+        topPanel.setBackground(Color.WHITE);
+        topPanel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(218, 220, 224)),
+            BorderFactory.createEmptyBorder(15, 20, 15, 20)
+        ));
         
         // 左侧：作业名称
         JLabel jobLabel = new JLabel("Job: " + jobName);
-        jobLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        jobLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        jobLabel.setForeground(new Color(60, 64, 67));
         topPanel.add(jobLabel, BorderLayout.WEST);
         
-        // 右侧：按钮
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
-        buildButton = new JButton("Build with Parameters");
+        // 右侧：按钮 - 现代化样式
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        buttonPanel.setBackground(Color.WHITE);
+        
+        buildButton = new JButton("<html><font color='white'><b>Build with Parameters</b></font></html>");
+        buildButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        buildButton.setPreferredSize(new Dimension(180, 35));
+        buildButton.setBackground(new Color(52, 168, 83));  // 绿色
+        buildButton.setForeground(Color.WHITE);
+        buildButton.setOpaque(true);
+        buildButton.setContentAreaFilled(true);
+        buildButton.setFocusPainted(false);
+        buildButton.setBorderPainted(false);
+        buildButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         buildButton.addActionListener(e -> openBuildParametersDialog());
         buttonPanel.add(buildButton);
         
-        refreshButton = new JButton("Refresh");
+        refreshButton = new JButton("<html><font color='white'><b>Refresh</b></font></html>");
+        refreshButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        refreshButton.setPreferredSize(new Dimension(100, 35));
+        refreshButton.setBackground(new Color(66, 133, 244));  // 蓝色
+        refreshButton.setForeground(Color.WHITE);
+        refreshButton.setOpaque(true);
+        refreshButton.setContentAreaFilled(true);
+        refreshButton.setFocusPainted(false);
+        refreshButton.setBorderPainted(false);
+        refreshButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         refreshButton.addActionListener(e -> loadBuildHistory());
         buttonPanel.add(refreshButton);
         
@@ -71,19 +97,28 @@ public class JenkinsJobDetailsDialog extends JDialog {
         mainSplitPane.setDividerLocation(400);  // 左侧 Build History 占 40%
         mainSplitPane.setResizeWeight(0.4);     // 左侧占 40%，右侧占 60%
         mainSplitPane.setBorder(null);
+        mainSplitPane.setBackground(Color.WHITE);
 
-        // 左侧：构建历史列表
+        // 左侧：构建历史列表 - 现代化样式
         JPanel buildHistoryPanel = new JPanel(new BorderLayout());
-        buildHistoryPanel.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createEmptyBorder(0, 10, 0, 5),
-            BorderFactory.createTitledBorder("Build History")
-        ));
+        buildHistoryPanel.setBackground(Color.WHITE);
+        buildHistoryPanel.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 10));
+        
+        // 添加标题标签
+        JLabel buildHistoryLabel = new JLabel("Build History");
+        buildHistoryLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        buildHistoryLabel.setForeground(new Color(60, 64, 67));
+        buildHistoryLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
+        buildHistoryPanel.add(buildHistoryLabel, BorderLayout.NORTH);
         
         buildListModel = new DefaultListModel<>();
         buildList = new JList<>(buildListModel);
-        buildList.setFont(AppSettings.getInstance().getRightPanelFont());
+        buildList.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         buildList.setCellRenderer(new BuildListCellRenderer());
         buildList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        buildList.setBackground(Color.WHITE);
+        buildList.setSelectionBackground(new Color(66, 133, 244, 50));
+        buildList.setSelectionForeground(Color.BLACK);
         
         // 添加选择监听器
         buildList.addListSelectionListener(e -> {
@@ -110,6 +145,8 @@ public class JenkinsJobDetailsDialog extends JDialog {
         });
         
         JScrollPane buildScrollPane = new JScrollPane(buildList);
+        buildScrollPane.setBorder(BorderFactory.createLineBorder(new Color(218, 220, 224), 1));
+        buildScrollPane.setBackground(Color.WHITE);
         buildHistoryPanel.add(buildScrollPane, BorderLayout.CENTER);
         
         mainSplitPane.setLeftComponent(buildHistoryPanel);
@@ -119,32 +156,48 @@ public class JenkinsJobDetailsDialog extends JDialog {
         rightSplitPane.setDividerLocation(300);  // Stage View 和 Console Log 各占 50%
         rightSplitPane.setResizeWeight(0.5);     // 上下各占 50%
         rightSplitPane.setBorder(null);
+        rightSplitPane.setBackground(Color.WHITE);
         
-        // Stage 视图面板
+        // Stage 视图面板 - 现代化样式
+        JPanel stagePanel = new JPanel(new BorderLayout());
+        stagePanel.setBackground(Color.WHITE);
+        stagePanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 5, 20));
+        
+        JLabel stageLabel = new JLabel("Stage View");
+        stageLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        stageLabel.setForeground(new Color(60, 64, 67));
+        stageLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
+        stagePanel.add(stageLabel, BorderLayout.NORTH);
+        
         stageViewPanel = new JenkinsStageViewPanel();
-        stageViewPanel.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createEmptyBorder(0, 5, 0, 10),
-            BorderFactory.createTitledBorder("Stage View")
-        ));
+        stageViewPanel.setBorder(BorderFactory.createLineBorder(new Color(218, 220, 224), 1));
+        stageViewPanel.setBackground(Color.WHITE);
         stageViewPanel.setJobInfo(apiClient, jobPath, 0);
+        stagePanel.add(stageViewPanel, BorderLayout.CENTER);
         
-        rightSplitPane.setTopComponent(stageViewPanel);
+        rightSplitPane.setTopComponent(stagePanel);
         
-        // Console Log 面板
+        // Console Log 面板 - 现代化样式
         JPanel consolePanel = new JPanel(new BorderLayout());
-        consolePanel.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createEmptyBorder(5, 5, 0, 10),
-            BorderFactory.createTitledBorder("Console Log")
-        ));
+        consolePanel.setBackground(Color.WHITE);
+        consolePanel.setBorder(BorderFactory.createEmptyBorder(5, 10, 10, 20));
+        
+        JLabel consoleLabel = new JLabel("Console Log");
+        consoleLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        consoleLabel.setForeground(new Color(60, 64, 67));
+        consoleLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
+        consolePanel.add(consoleLabel, BorderLayout.NORTH);
         
         consoleLogArea = new JTextArea();
         consoleLogArea.setEditable(false);
-        consoleLogArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        consoleLogArea.setFont(new Font("Monospaced", Font.PLAIN, 13));  // 增大字体：从 12 改为 13
         consoleLogArea.setBackground(new Color(30, 30, 30));
-        consoleLogArea.setForeground(new Color(200, 200, 200));
-        consoleLogArea.setCaretColor(Color.WHITE);
+        consoleLogArea.setForeground(new Color(220, 220, 220));
+        consoleLogArea.setCaretColor(new Color(220, 220, 220));
+        consoleLogArea.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        
         JScrollPane consoleScrollPane = new JScrollPane(consoleLogArea);
-        consoleScrollPane.setBorder(null);
+        consoleScrollPane.setBorder(BorderFactory.createLineBorder(new Color(218, 220, 224), 1));
         consolePanel.add(consoleScrollPane, BorderLayout.CENTER);
         
         // 将 Console Log 区域传递给 StageViewPanel
@@ -156,10 +209,21 @@ public class JenkinsJobDetailsDialog extends JDialog {
         
         add(mainSplitPane, BorderLayout.CENTER);
 
-        // 底部按钮面板
-        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        bottomPanel.setBorder(BorderFactory.createEmptyBorder(5, 0, 10, 0));
-        JButton closeButton = new JButton("Close");
+        // 底部按钮面板 - 现代化样式
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        bottomPanel.setBackground(Color.WHITE);
+        bottomPanel.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 20));
+        
+        JButton closeButton = new JButton("<html><font color='white'><b>Close</b></font></html>");
+        closeButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        closeButton.setPreferredSize(new Dimension(100, 35));
+        closeButton.setBackground(new Color(95, 99, 104));  // 灰色
+        closeButton.setForeground(Color.WHITE);
+        closeButton.setOpaque(true);
+        closeButton.setContentAreaFilled(true);
+        closeButton.setFocusPainted(false);
+        closeButton.setBorderPainted(false);
+        closeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         closeButton.addActionListener(e -> dispose());
         bottomPanel.add(closeButton);
         
@@ -225,10 +289,40 @@ public class JenkinsJobDetailsDialog extends JDialog {
                     List<JenkinsStage> stages = get();
                     logToConsole("Successfully loaded " + stages.size() + " modules");
                     
-                    for (JenkinsStage stage : stages) {
-                        logToConsole("  Module: " + stage.getName() + 
-                                   ", ID: " + (stage.getId() != null ? stage.getId() : "NULL") +
-                                   ", Status: " + stage.getStatus());
+                    // 特殊情况：如果没有 stages，说明这个 build 本身就是一个 stage
+                    // 创建一个合成的 stage 来代表这个 build
+                    if (stages.isEmpty()) {
+                        logToConsole("No modules found - this build IS itself a stage");
+                        logToConsole("Creating synthetic stage for build #" + build.getNumber());
+                        
+                        JenkinsStage syntheticStage = new JenkinsStage();
+                        syntheticStage.setName("Build #" + build.getNumber());
+                        syntheticStage.setId("build-" + build.getNumber());  // 使用特殊的 ID 格式
+                        
+                        // 设置状态（从 build 的 result 映射到 stage 的 status）
+                        if (build.getResult() != null) {
+                            syntheticStage.setStatus(build.getResult());
+                        } else {
+                            syntheticStage.setStatus("IN_PROGRESS");
+                        }
+                        
+                        // 持续时间设置为 0（因为我们没有这个信息）
+                        syntheticStage.setDurationMillis(0);
+                        
+                        // 附加 build 信息，用于在 Stage View 中显示详细信息
+                        syntheticStage.setBuildInfo(build);
+                        
+                        stages = new java.util.ArrayList<>();
+                        stages.add(syntheticStage);
+                        
+                        logToConsole("Created synthetic stage: " + syntheticStage.getName() + 
+                                   ", Status: " + syntheticStage.getStatus());
+                    } else {
+                        for (JenkinsStage stage : stages) {
+                            logToConsole("  Module: " + stage.getName() + 
+                                       ", ID: " + (stage.getId() != null ? stage.getId() : "NULL") +
+                                       ", Status: " + stage.getStatus());
+                        }
                     }
                     
                     stageViewPanel.setJobInfo(apiClient, jobPath, build.getNumber());
@@ -449,13 +543,13 @@ public class JenkinsJobDetailsDialog extends JDialog {
 
         private String getStatusIcon(JenkinsBuild build) {
             if (build.isSuccess()) {
-                return "●";
+                return "[OK]";  // 成功
             } else if (build.isFailure()) {
-                return "●";
+                return "[FAIL]";  // 失败
             } else if (build.isInProgress()) {
-                return "●";
+                return "[RUN]";  // 进行中
             } else {
-                return "○";
+                return "[ ]";  // 其他
             }
         }
 
@@ -464,16 +558,33 @@ public class JenkinsJobDetailsDialog extends JDialog {
             tooltip.append("<b>Build #").append(build.getNumber()).append("</b><br>");
             tooltip.append("<b>Status:</b> ").append(build.getResult() != null ? build.getResult() : "IN_PROGRESS").append("<br>");
             tooltip.append("<b>Triggered by:</b> ").append(build.getTriggeredBy() != null ? build.getTriggeredBy() : "Unknown").append("<br>");
+            tooltip.append("<b>Trigger Time:</b> ").append(formatTimestamp(build.getTimestamp())).append("<br>");
             
-            if (build.getParameters() != null && !build.getParameters().isEmpty()) {
-                tooltip.append("<b>Parameters:</b><br>");
-                for (Map.Entry<String, String> entry : build.getParameters().entrySet()) {
-                    tooltip.append("&nbsp;&nbsp;").append(entry.getKey()).append(": ").append(entry.getValue()).append("<br>");
+            // 显示关键参数
+            Map<String, String> params = build.getParameters();
+            if (params != null && !params.isEmpty()) {
+                if (params.containsKey("SERVICE_NAME")) {
+                    tooltip.append("<b>Service Name:</b> ").append(params.get("SERVICE_NAME")).append("<br>");
+                }
+                if (params.containsKey("versions")) {
+                    tooltip.append("<b>Versions:</b> ").append(params.get("versions")).append("<br>");
+                }
+                if (params.containsKey("VERSION")) {
+                    tooltip.append("<b>Version:</b> ").append(params.get("VERSION")).append("<br>");
+                }
+                if (params.containsKey("BRANCH") || params.containsKey("branch")) {
+                    String branch = params.containsKey("BRANCH") ? params.get("BRANCH") : params.get("branch");
+                    tooltip.append("<b>Branch:</b> ").append(branch).append("<br>");
                 }
             }
             
             tooltip.append("</html>");
             return tooltip.toString();
+        }
+        
+        private String formatTimestamp(long timestamp) {
+            SimpleDateFormat sdf = new SimpleDateFormat("MMM dd, yyyy HH:mm");
+            return sdf.format(new Date(timestamp));
         }
     }
 }

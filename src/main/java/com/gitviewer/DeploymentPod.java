@@ -10,6 +10,7 @@ public class DeploymentPod {
     private String creationTimestamp;
     private String app;
     private String realStatus;
+    private String image;  // 容器镜像
     
     /**
      * 构造函数
@@ -32,6 +33,7 @@ public class DeploymentPod {
         this.creationTimestamp = creationTimestamp;
         this.app = app;
         this.realStatus = realStatus;
+        this.image = "";
     }
     
     // Getters and Setters
@@ -76,6 +78,14 @@ public class DeploymentPod {
         this.realStatus = realStatus;
     }
     
+    public String getImage() {
+        return image;
+    }
+    
+    public void setImage(String image) {
+        this.image = image;
+    }
+    
     @Override
     public String toString() {
         return "DeploymentPod{" +
@@ -84,6 +94,7 @@ public class DeploymentPod {
                 ", creationTimestamp='" + creationTimestamp + '\'' +
                 ", app='" + app + '\'' +
                 ", realStatus='" + realStatus + '\'' +
+                ", image='" + image + '\'' +
                 '}';
     }
 }

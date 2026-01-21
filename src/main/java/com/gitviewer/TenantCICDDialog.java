@@ -1149,8 +1149,8 @@ public class TenantCICDDialog extends JDialog {
      * Add branch filter icon to table header
      */
     private void addBranchFilterIcon() {
-        // 获取Git Branch列的表头
-        TableColumn branchColumn = resultsTable.getColumnModel().getColumn(5);
+        // 获取Git Branch列的表头（第6列，索引为6）
+        TableColumn branchColumn = resultsTable.getColumnModel().getColumn(6);
         
         // 创建带图标的表头渲染器
         branchColumn.setHeaderRenderer((table, value, isSelected, hasFocus, row, column) -> {
@@ -1185,7 +1185,7 @@ public class TenantCICDDialog extends JDialog {
             @Override
             public void mouseClicked(java.awt.event.MouseEvent e) {
                 int column = resultsTable.getTableHeader().columnAtPoint(e.getPoint());
-                if (column == 5) {  // Git Branch列
+                if (column == 6) {  // Git Branch列（第6列，索引为6）
                     // 检查点击位置是否在图标区域
                     Rectangle headerRect = resultsTable.getTableHeader().getHeaderRect(column);
                     int iconX = headerRect.x + headerRect.width - 30;  // 图标大约在右侧30像素内

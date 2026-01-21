@@ -68,7 +68,7 @@ public class JenkinsStageLogDialog extends JDialog {
      */
     private void initializeUI() {
         setLayout(new BorderLayout(10, 10));
-        setSize(900, 600);
+        setSize(1200, 800);  // 增大窗口尺寸：从 900x600 改为 1200x800
 
         // 顶部面板 - Stage 信息和按钮
         JPanel topPanel = new JPanel(new BorderLayout());
@@ -102,7 +102,7 @@ public class JenkinsStageLogDialog extends JDialog {
         
         // Tab 1: Jenkins Log
         jenkinsLogTextArea = new JTextArea();
-        jenkinsLogTextArea.setFont(new Font("Microsoft YaHei", Font.PLAIN, 11));
+        jenkinsLogTextArea.setFont(new Font("Monospaced", Font.PLAIN, 13));  // 增大字体：从 11 改为 13
         jenkinsLogTextArea.setEditable(false);
         jenkinsLogTextArea.setLineWrap(false);
         jenkinsLogTextArea.setWrapStyleWord(false);
@@ -118,7 +118,7 @@ public class JenkinsStageLogDialog extends JDialog {
         
         // Tab 2: Portal Log
         portalLogTextArea = new JTextArea();
-        portalLogTextArea.setFont(new Font("Microsoft YaHei", Font.PLAIN, 11));
+        portalLogTextArea.setFont(new Font("Monospaced", Font.PLAIN, 13));  // 增大字体：从 11 改为 13
         portalLogTextArea.setEditable(false);
         portalLogTextArea.setLineWrap(false);
         portalLogTextArea.setWrapStyleWord(false);
@@ -432,7 +432,20 @@ public class JenkinsStageLogDialog extends JDialog {
             protected String doInBackground() throws Exception {
                 System.out.println("[StageLogDialog] Jenkins Worker started");
                 try {
-                    // 首先获取 Stage Log
+                    // 检查是否是合成的 stage（build 本身）
+                    if (stage.getId() != null && stage.getId().startsWith("build-")) {
+                        System.out.println("[StageLogDialog] Detected synthetic stage - loading build console log directly");
+                        String buildLog = apiClient.fetchBuildConsoleLog(jobPath, buildNumber);
+                        System.out.println("[StageLogDialog] Build console log fetched, length: " + (buildLog != null ? buildLog.length() : 0));
+                        
+                        // 缓存 build log 供 Portal Log 使用
+                        cachedStageLog = buildLog;
+                        System.out.println("[StageLogDialog] Cached build log for Portal Log");
+                        
+                        return buildLog;
+                    }
+                    
+                    // 正常的 stage：首先获取 Stage Log
                     System.out.println("[StageLogDialog] Fetching stage log...");
                     String stageLog = apiClient.fetchStageLog(jobPath, buildNumber, stage.getId(), stage.getName());
                     System.out.println("[StageLogDialog] Stage log fetched, length: " + (stageLog != null ? stageLog.length() : 0));

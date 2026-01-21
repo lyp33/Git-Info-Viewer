@@ -56,6 +56,7 @@ com\gitviewer\InfoPanel$CommitSearchResultDialog$ChangedFilesRenderer.class
 com\gitviewer\InfoPanel$CheckBoxCellRenderer$1.class
 com\gitviewer\BatchCherryPickDialog$2.class
 com\gitviewer\FileDiffDialog$1.class
+com\gitviewer\DeploymentPodListDialog$MultiLineTableCellRenderer.class
 com\gitviewer\AIChatDialog$1.class
 com\gitviewer\RepoDetailsDialog$5.class
 com\gitviewer\DeploymentDialog$3.class
@@ -90,6 +91,7 @@ com\gitviewer\InfoPanel$1.class
 com\gitviewer\InfoPanel$ButtonCellRenderer.class
 com\gitviewer\BatchCherryPickDialog$CommitInfo.class
 com\gitviewer\FileDiffDialog$2.class
+com\gitviewer\FileDiffDialog$HunkInfo.class
 com\gitviewer\TestFavoritesUtil$1.class
 com\gitviewer\InfoPanel$NonEditableTableModel.class
 com\gitviewer\TenantCICDUtils.class

@@ -16,7 +16,7 @@ public class PortalSettingsDialog extends JDialog {
     
     private JTextField usernameField;
     private JPasswordField passwordField;
-    private JTextField tenantCodesField;
+    private JTextArea tenantCodesField;  // 改为JTextArea以支持多行输入
     private JButton saveButton;
     private JButton cancelButton;
     
@@ -57,7 +57,7 @@ public class PortalSettingsDialog extends JDialog {
      */
     private void initializeUI() {
         setLayout(new BorderLayout(10, 10));
-        setSize(650, 350);
+        setSize(700, 420);  // 增加宽度到700，高度到420
         setResizable(false);
         getContentPane().setBackground(Color.WHITE);
         
@@ -78,7 +78,7 @@ public class PortalSettingsDialog extends JDialog {
         JTextArea descriptionArea = new JTextArea(
             "Configure your Portal credentials and tenant codes. " +
             "Multiple tenant codes can be separated by commas. " +
-            "Use format tenant{sub1/sub2} to specify sub-tenant codes (workspaces)."
+            "Use format tenant{sub1/sub2}, tenant[sub1/sub2], or tenant(sub1/sub2) to specify sub-tenant codes (workspaces)."
         );
         descriptionArea.setEditable(false);
         descriptionArea.setWrapStyleWord(true);
@@ -137,25 +137,42 @@ public class PortalSettingsDialog extends JDialog {
         // Tenant Codes 标签
         gbc.gridx = 0;
         gbc.gridy = 2;
-        gbc.anchor = GridBagConstraints.EAST;
+        gbc.anchor = GridBagConstraints.NORTHEAST;  // 改为顶部对齐
+        gbc.weightx = 0.0;  // 标签不扩展
+        gbc.weighty = 0.0;
+        gbc.fill = GridBagConstraints.NONE;
         JLabel tenantCodesLabel = new JLabel("Tenant Codes:");
         tenantCodesLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         formPanel.add(tenantCodesLabel, gbc);
         
-        // Tenant Codes 输入框
+        // Tenant Codes 输入框（改为JTextArea）
         gbc.gridx = 1;
         gbc.anchor = GridBagConstraints.WEST;
-        tenantCodesField = new JTextField();
+        gbc.weightx = 1.0;  // 允许水平扩展
+        gbc.weighty = 1.0;  // 允许垂直扩展
+        gbc.fill = GridBagConstraints.BOTH;  // 填充整个区域
+        tenantCodesField = new JTextArea(6, 40);  // 增加到6行，40列
         tenantCodesField.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        tenantCodesField.setPreferredSize(new Dimension(400, 28));
-        tenantCodesField.setToolTipText("Enter tenant codes (comma-separated, e.g., thailife,tenant2 or tenant{sub1/sub2},tenant2)");
-        formPanel.add(tenantCodesField, gbc);
+        tenantCodesField.setLineWrap(true);  // 自动换行
+        tenantCodesField.setWrapStyleWord(true);  // 按单词换行
+        tenantCodesField.setToolTipText("Enter tenant codes (comma-separated, e.g., thailife,tenant2 or tenant{sub1/sub2}, tenant[sub1/sub2], tenant(sub1/sub2))");
+        
+        // 添加滚动面板
+        JScrollPane tenantCodesScrollPane = new JScrollPane(tenantCodesField);
+        tenantCodesScrollPane.setPreferredSize(new Dimension(500, 120));  // 增加宽度到500，高度到120
+        tenantCodesScrollPane.setMinimumSize(new Dimension(500, 120));  // 设置最小尺寸
+        tenantCodesScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        tenantCodesScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        formPanel.add(tenantCodesScrollPane, gbc);
         
         // Tenant Codes 提示文本
         gbc.gridx = 1;
         gbc.gridy = 3;
         gbc.anchor = GridBagConstraints.WEST;
-        JLabel tenantCodesHint = new JLabel("<html><i>Format: tenant1,tenant2 or tenant{sub1/sub2},tenant2</i></html>");
+        gbc.weightx = 0.0;  // 重置权重
+        gbc.weighty = 0.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        JLabel tenantCodesHint = new JLabel("<html><i>Format: tenant1,tenant2 or tenant{sub1/sub2}, tenant[sub1/sub2], tenant(sub1/sub2)</i></html>");
         tenantCodesHint.setFont(new Font("Segoe UI", Font.PLAIN, 10));
         tenantCodesHint.setForeground(Color.GRAY);
         formPanel.add(tenantCodesHint, gbc);

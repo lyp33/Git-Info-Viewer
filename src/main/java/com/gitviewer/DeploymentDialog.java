@@ -227,6 +227,20 @@ public class DeploymentDialog extends JDialog {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
         panel.setBackground(Color.WHITE);
         
+        // Deploy 按钮 - 绿色
+        deployButton = new JButton("<html><font color='white'><b>Deploy</b></font></html>");
+        deployButton.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 13));
+        deployButton.setPreferredSize(new Dimension(120, 35));
+        deployButton.setBackground(new Color(52, 168, 83));
+        deployButton.setForeground(Color.WHITE);
+        deployButton.setOpaque(true);
+        deployButton.setContentAreaFilled(true);
+        deployButton.setFocusPainted(false);
+        deployButton.setBorderPainted(false);
+        deployButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        deployButton.addActionListener(e -> handleDeploy());
+        panel.add(deployButton);
+        
         // Deployment Log 按钮 - 蓝色
         JButton deploymentLogButton = new JButton("<html><font color='white'><b>Deployment Log</b></font></html>");
         deploymentLogButton.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 13));
@@ -241,21 +255,7 @@ public class DeploymentDialog extends JDialog {
         deploymentLogButton.addActionListener(e -> handleDeploymentLog());
         panel.add(deploymentLogButton);
         
-        // Deploy 按钮
-        deployButton = new JButton("<html><font color='white'><b>Deploy</b></font></html>");
-        deployButton.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 13));
-        deployButton.setPreferredSize(new Dimension(120, 35));
-        deployButton.setBackground(new Color(52, 168, 83));
-        deployButton.setForeground(Color.WHITE);
-        deployButton.setOpaque(true);
-        deployButton.setContentAreaFilled(true);
-        deployButton.setFocusPainted(false);
-        deployButton.setBorderPainted(false);
-        deployButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        deployButton.addActionListener(e -> handleDeploy());
-        panel.add(deployButton);
-        
-        // Close 按钮
+        // Close 按钮 - 灰色
         closeButton = new JButton("<html><font color='white'><b>Close</b></font></html>");
         closeButton.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 13));
         closeButton.setPreferredSize(new Dimension(100, 35));

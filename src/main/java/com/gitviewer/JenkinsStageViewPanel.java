@@ -3,6 +3,7 @@ package com.gitviewer;
 import javax.swing.*;
 import java.awt.*;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Jenkins Pipeline Stage 视图面板
@@ -125,8 +126,14 @@ public class JenkinsStageViewPanel extends JPanel {
         SwingWorker<String, Void> worker = new SwingWorker<String, Void>() {
             @Override
             protected String doInBackground() throws Exception {
-                // 使用新的 API：传入 stageName
-                return apiClient.fetchStageLog(jobPath, buildNumber, stage.getId(), stage.getName());
+                // 检查是否是合成的 stage（build 本身）
+                if (stage.getId() != null && stage.getId().startsWith("build-")) {
+                    logToConsole("Detected synthetic stage - loading build console log");
+                    return apiClient.fetchBuildConsoleLog(jobPath, buildNumber);
+                } else {
+                    // 使用新的 API：传入 stageName
+                    return apiClient.fetchStageLog(jobPath, buildNumber, stage.getId(), stage.getName());
+                }
             }
 
             @Override
@@ -134,14 +141,16 @@ public class JenkinsStageViewPanel extends JPanel {
                 try {
                     String log = get();
                     
-                    // 尝试从日志中提取 Stage Build ID
-                    Integer stageBuildId = apiClient.extractStageBuildId(log);
-                    if (stageBuildId != null) {
-                        stage.setStageBuildNumber(stageBuildId);
-                        logToConsole("✓ Detected Stage Build ID: #" + stageBuildId);
-                        
-                        // 刷新 Stage 列表显示
-                        stageList.repaint();
+                    // 尝试从日志中提取 Stage Build ID（仅对非合成 stage）
+                    if (stage.getId() == null || !stage.getId().startsWith("build-")) {
+                        Integer stageBuildId = apiClient.extractStageBuildId(log);
+                        if (stageBuildId != null) {
+                            stage.setStageBuildNumber(stageBuildId);
+                            logToConsole("✓ Detected Stage Build ID: #" + stageBuildId);
+                            
+                            // 刷新 Stage 列表显示
+                            stageList.repaint();
+                        }
                     }
                     
                     logToConsole("=== Module Log: " + stage.getName() + " ===");
@@ -201,6 +210,34 @@ public class JenkinsStageViewPanel extends JPanel {
             return;
         }
         logToConsole("✓ Stage ID not empty check passed");
+        
+        // 检查是否是合成的 stage（build 本身）
+        if (stageId.startsWith("build-")) {
+            logToConsole("Detected synthetic stage - this is a build without sub-stages");
+            logToConsole("Opening build console log dialog instead of stage log dialog");
+            
+            // 对于合成 stage，直接显示 build 的 console log
+            // 我们可以重用 JenkinsStageLogDialog，但传入特殊标记
+            try {
+                Window parentWindow = SwingUtilities.getWindowAncestor(this);
+                logToConsole("Creating JenkinsStageLogDialog for synthetic stage...");
+                
+                JenkinsStageLogDialog dialog = new JenkinsStageLogDialog(
+                    parentWindow, apiClient, jobPath, buildNumber, stage);
+                
+                logToConsole("Dialog created successfully");
+                dialog.setVisible(true);
+                logToConsole("Dialog closed");
+            } catch (Throwable e) {
+                logToConsole("ERROR: Exception while opening dialog: " + e.getClass().getName() + ": " + e.getMessage());
+                e.printStackTrace();
+                JOptionPane.showMessageDialog(this, 
+                    "Failed to open module log dialog: " + e.getMessage(), 
+                    "Error", 
+                    JOptionPane.ERROR_MESSAGE);
+            }
+            return;
+        }
         
         logToConsole("All checks passed, getting parent frame...");
         
@@ -298,12 +335,87 @@ public class JenkinsStageViewPanel extends JPanel {
                 // 构建显示文本
                 String statusIcon = getStatusIcon(stage);
                 StringBuilder displayText = new StringBuilder();
-                displayText.append(statusIcon).append(" ").append(stage.getName());
-                displayText.append(" (").append(stage.getFormattedDuration()).append(")");
+                displayText.append(statusIcon).append(" ");
                 
-                // 如果有 Stage Build ID，显示它
-                if (stage.hasStageBuildId()) {
-                    displayText.append(" - Build ").append(stage.getStageBuildDisplay());
+                // 检查是否是合成 stage（没有子 stage 的 build）
+                if (stage.getId() != null && stage.getId().startsWith("build-") && stage.getBuildInfo() != null) {
+                    // 对于合成 stage，显示完整的 build 信息
+                    JenkinsBuild build = stage.getBuildInfo();
+                    
+                    // 构建编号
+                    displayText.append("#").append(build.getNumber());
+                    
+                    // 状态
+                    displayText.append(" - ");
+                    if (build.getResult() != null) {
+                        displayText.append(build.getResult());
+                    } else {
+                        displayText.append("IN_PROGRESS");
+                    }
+                    
+                    // 时间
+                    displayText.append(" - ");
+                    displayText.append(formatTimestamp(build.getTimestamp()));
+                    
+                    // 触发用户
+                    if (build.getTriggeredBy() != null && !build.getTriggeredBy().isEmpty()) {
+                        displayText.append(" - by ").append(build.getTriggeredBy());
+                    }
+                    
+                    // 关键参数：优先显示 SERVICE_NAME, versions, VERSION, BRANCH
+                    Map<String, String> params = build.getParameters();
+                    if (params != null && !params.isEmpty()) {
+                        StringBuilder paramText = new StringBuilder();
+                        
+                        if (params.containsKey("SERVICE_NAME")) {
+                            String serviceName = params.get("SERVICE_NAME");
+                            if (serviceName != null && !serviceName.isEmpty()) {
+                                if (paramText.length() > 0) paramText.append(", ");
+                                paramText.append("SERVICE_NAME: ").append(serviceName);
+                            }
+                        }
+                        
+                        if (params.containsKey("versions") || params.containsKey("VERSIONS")) {
+                            String versions = params.containsKey("versions") ? params.get("versions") : params.get("VERSIONS");
+                            if (versions != null && !versions.isEmpty()) {
+                                if (paramText.length() > 0) paramText.append(", ");
+                                // 截断过长的值
+                                if (versions.length() > 50) {
+                                    versions = versions.substring(0, 47) + "...";
+                                }
+                                paramText.append("VERSIONS: ").append(versions);
+                            }
+                        }
+                        
+                        if (params.containsKey("VERSION")) {
+                            String version = params.get("VERSION");
+                            if (version != null && !version.isEmpty()) {
+                                if (paramText.length() > 0) paramText.append(", ");
+                                paramText.append("VERSION: ").append(version);
+                            }
+                        }
+                        
+                        if (params.containsKey("BRANCH") || params.containsKey("branch")) {
+                            String branch = params.containsKey("BRANCH") ? params.get("BRANCH") : params.get("branch");
+                            if (branch != null && !branch.isEmpty()) {
+                                if (paramText.length() > 0) paramText.append(", ");
+                                paramText.append("BRANCH: ").append(branch);
+                            }
+                        }
+                        
+                        if (paramText.length() > 0) {
+                            displayText.append(" - [").append(paramText).append("]");
+                        }
+                    }
+                } else {
+                    // 对于正常 stage，显示原有格式
+                    displayText.append(stage.getName());
+                    displayText.append(" (").append(stage.getFormattedDuration()).append(")");
+                    
+                    // 如果有 Stage Build ID，显示它
+                    if (stage.hasStageBuildId()) {
+                        displayText.append(" - Build ").append(stage.getStageBuildDisplay());
+                    }
                 }
                 
                 setText(displayText.toString());
@@ -334,13 +446,13 @@ public class JenkinsStageViewPanel extends JPanel {
 
         private String getStatusIcon(JenkinsStage stage) {
             if (stage.isSuccess()) {
-                return "●";  // 绿色圆点
+                return "[OK]";  // 成功
             } else if (stage.isFailure()) {
-                return "●";  // 红色圆点
+                return "[FAIL]";  // 失败
             } else if (stage.isInProgress()) {
-                return "●";  // 蓝色圆点
+                return "[RUN]";  // 进行中
             } else {
-                return "○";  // 空心圆点
+                return "[ ]";  // 其他
             }
         }
 
@@ -357,9 +469,46 @@ public class JenkinsStageViewPanel extends JPanel {
                 tooltip.append("<b>Build ID:</b> ").append(stage.getStageBuildDisplay()).append("<br>");
             }
             
-            tooltip.append("<i>Click to view log in console, double-click to open dialog</i>");
+            // 对于合成 stage（没有子 stage 的 build），显示额外信息
+            if (stage.getId() != null && stage.getId().startsWith("build-")) {
+                if (stage.getBuildInfo() != null) {
+                    JenkinsBuild build = stage.getBuildInfo();
+                    
+                    tooltip.append("<br><b>--- Build Details ---</b><br>");
+                    
+                    if (build.getTriggeredBy() != null) {
+                        tooltip.append("<b>Triggered by:</b> ").append(build.getTriggeredBy()).append("<br>");
+                    }
+                    
+                    tooltip.append("<b>Trigger Time:</b> ").append(formatTimestamp(build.getTimestamp())).append("<br>");
+                    
+                    Map<String, String> params = build.getParameters();
+                    if (params != null && !params.isEmpty()) {
+                        if (params.containsKey("SERVICE_NAME")) {
+                            tooltip.append("<b>Service Name:</b> ").append(params.get("SERVICE_NAME")).append("<br>");
+                        }
+                        if (params.containsKey("versions")) {
+                            tooltip.append("<b>Versions:</b> ").append(params.get("versions")).append("<br>");
+                        }
+                        if (params.containsKey("VERSION")) {
+                            tooltip.append("<b>Version:</b> ").append(params.get("VERSION")).append("<br>");
+                        }
+                        if (params.containsKey("BRANCH") || params.containsKey("branch")) {
+                            String branch = params.containsKey("BRANCH") ? params.get("BRANCH") : params.get("branch");
+                            tooltip.append("<b>Branch:</b> ").append(branch).append("<br>");
+                        }
+                    }
+                }
+            }
+            
+            tooltip.append("<br><i>Click to view log in console, double-click to open dialog</i>");
             tooltip.append("</html>");
             return tooltip.toString();
+        }
+        
+        private String formatTimestamp(long timestamp) {
+            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("MMM dd, yyyy HH:mm");
+            return sdf.format(new java.util.Date(timestamp));
         }
     }
 }
