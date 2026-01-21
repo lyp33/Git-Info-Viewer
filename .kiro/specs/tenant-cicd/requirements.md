@@ -9,7 +9,10 @@ This document specifies the requirements for implementing a Tenant-level CI/CD m
 - **Portal**: The insuremo.com portal system that provides CI/CD APIs
 - **Tenant**: A tenant environment (e.g., "thailife") in the Portal system
 - **Tenant_Code**: The unique identifier for a tenant (e.g., "thailife")
+- **Sub_Tenant_Code**: A sub-tenant identifier under a main tenant, also known as Workspace (e.g., "thailifedev", "thailifetest")
+- **Workspace**: An alias for Sub_Tenant_Code, representing a deployment environment under a main tenant
 - **Token**: Bearer authentication token obtained from Portal API
+- **Workspace_Token**: A temporary bearer token obtained for a specific workspace, used for deployment operations
 - **Build_History**: Record of application build operations
 - **Plan**: A multi-application build package with a unique title
 - **Application**: A deployable software component (app) in the tenant
@@ -18,6 +21,9 @@ This document specifies the requirements for implementing a Tenant-level CI/CD m
 - **Version_Code**: A unique identifier for a build package, typically in format "{branch}_{timestamp}"
 - **Build_Package**: A coordinated build of multiple applications with the same version code
 - **Tenant_Configuration**: Configuration data for a tenant including available branches
+- **Environment**: A deployment target environment (e.g., "hwc_th_thailife_prod") within a workspace
+- **Image**: A Docker container image with format "registry/workspace/app:version"
+- **Deployment**: The process of deploying one or more images to a target environment
 
 ## Requirements
 
@@ -325,3 +331,167 @@ This document specifies the requirements for implementing a Tenant-level CI/CD m
 8. THE System SHALL use appropriate log levels: DEBUG for detailed flow, INFO for user actions, WARN for recoverable errors, ERROR for failures
 9. THE System SHALL include timestamps and thread information in all log entries
 10. THE System SHALL sanitize sensitive information (passwords, tokens) in log output by masking or redacting
+
+### Requirement 17: Sub-Tenant Code Configuration
+
+**User Story:** As a developer, I want to configure sub-tenant codes (workspaces) for each main tenant, so that I can deploy images to specific workspace environments.
+
+#### Acceptance Criteria
+
+1. THE System SHALL support tenant code configuration with optional sub-tenant codes in the format: "tenant{subtenant1/subtenant2/subtenant3}"
+2. THE System SHALL support simple tenant code format without sub-tenant codes: "tenant1,tenant2"
+3. THE System SHALL parse tenant codes with sub-tenant codes using curly braces and forward slashes as delimiters
+4. WHEN a tenant code contains sub-tenant codes, THE System SHALL extract and store the main tenant code and its associated sub-tenant code list
+5. WHEN a tenant code does not contain sub-tenant codes, THE System SHALL store only the main tenant code with an empty sub-tenant code list
+6. THE System SHALL support mixed configuration formats in the same tenant codes field (e.g., "stbd{stbddev/stbdtst},thailife")
+7. THE System SHALL persist sub-tenant code configuration along with tenant codes in application settings
+
+### Requirement 18: Image Deployment Interface
+
+**User Story:** As a developer, I want to deploy selected images to workspace environments, so that I can release builds to specific deployment targets.
+
+#### Acceptance Criteria
+
+1. THE System SHALL provide a "Deployment" button in the Tenant CI/CD interface
+2. THE System SHALL enable the Deployment button only when connected to a tenant
+3. WHEN the Deployment button is clicked, THE System SHALL open a Deployment dialog
+4. THE Deployment dialog SHALL display a textarea for image names list
+5. WHEN images are selected in the build history table, THE System SHALL populate the textarea with selected image names (one per line)
+6. WHEN no images are selected, THE System SHALL display an empty textarea allowing manual input
+7. THE System SHALL allow users to manually edit the image names in the textarea
+8. THE Deployment dialog SHALL provide a workspace dropdown populated with sub-tenant codes from the current main tenant
+9. THE Deployment dialog SHALL provide an environment dropdown that updates when workspace is selected
+10. THE Deployment dialog SHALL provide a Deploy button to initiate deployment
+11. THE Deployment dialog SHALL provide a console log area at the bottom to display deployment progress
+
+### Requirement 19: Workspace Selection and Token Management
+
+**User Story:** As a developer, I want to select a workspace and automatically load its available environments, so that I can choose the correct deployment target.
+
+#### Acceptance Criteria
+
+1. WHEN the Deployment dialog opens, THE System SHALL populate the workspace dropdown with sub-tenant codes from the current connected main tenant
+2. WHEN the current main tenant has no sub-tenant codes configured, THE System SHALL display an empty workspace dropdown
+3. WHEN a workspace is selected, THE System SHALL call the token API with the workspace as x-mo-tenant-id to obtain a temporary workspace token
+4. THE System SHALL use Portal Settings username and password for workspace token retrieval
+5. THE workspace token SHALL be stored separately from the main tenant token
+6. THE workspace token SHALL not affect or replace the main tenant token used for build history queries
+7. WHEN workspace token retrieval fails, THE System SHALL display an error message and disable the environment dropdown
+8. WHEN workspace token retrieval succeeds, THE System SHALL call the tenant configuration API using the workspace token
+
+### Requirement 20: Environment List Loading
+
+**User Story:** As a developer, I want to see available deployment environments for the selected workspace, so that I can choose where to deploy my images.
+
+#### Acceptance Criteria
+
+1. WHEN a workspace is selected and workspace token is obtained, THE System SHALL call GET /api/mo-fo/1.0/ops/tenantconfig API
+2. THE System SHALL include x-mo-target-tenant header with the selected workspace name
+3. THE System SHALL include authorization header with the workspace token
+4. THE System SHALL extract the deploy_pipeline.pipeline array from the API response
+5. THE System SHALL extract env_name values from each pipeline entry
+6. THE System SHALL populate the environment dropdown with all extracted environment names
+7. WHEN the API call fails, THE System SHALL display an error message and disable the environment dropdown
+8. WHEN no environments are found, THE System SHALL display "No environments available" message
+
+### Requirement 21: Image Name Parsing
+
+**User Story:** As a system, I want to extract application names from image names, so that I can construct correct deployment API requests.
+
+#### Acceptance Criteria
+
+1. THE System SHALL parse image names in the format "registry/workspace/app:version"
+2. THE System SHALL extract the application name from the third segment of the image path
+3. FOR image "docker-all.repo.ebaotech.com/thailifedev/thailife-bs:24.08.22", THE System SHALL extract "thailife-bs" as the app name
+4. THE System SHALL handle image names with different registry domains
+5. THE System SHALL handle image names with different version formats
+6. WHEN image name format is invalid or cannot be parsed, THE System SHALL log an error and skip that image
+
+### Requirement 22: Deployment Confirmation
+
+**User Story:** As a developer, I want to review deployment details before execution, so that I can verify the configuration is correct.
+
+#### Acceptance Criteria
+
+1. WHEN the Deploy button is clicked, THE System SHALL validate that at least one image name is entered
+2. WHEN the Deploy button is clicked, THE System SHALL validate that a workspace is selected
+3. WHEN the Deploy button is clicked, THE System SHALL validate that an environment is selected
+4. WHEN validation passes, THE System SHALL display a confirmation dialog
+5. THE confirmation dialog SHALL display the list of images to be deployed
+6. THE confirmation dialog SHALL display the selected workspace name
+7. THE confirmation dialog SHALL display the selected environment name
+8. THE confirmation dialog SHALL display the total number of images to be deployed
+9. THE confirmation dialog SHALL provide "Confirm" and "Cancel" buttons
+10. WHEN the user clicks "Cancel", THE System SHALL close the confirmation dialog and return to the Deployment dialog
+11. WHEN the user clicks "Confirm", THE System SHALL proceed with deployment execution
+
+### Requirement 23: Deployment Execution
+
+**User Story:** As a developer, I want to deploy images sequentially with progress feedback, so that I can monitor the deployment process.
+
+#### Acceptance Criteria
+
+1. WHEN deployment is confirmed, THE System SHALL deploy images sequentially (one at a time)
+2. FOR EACH image, THE System SHALL call POST /api/mo-fo/1.0/ops/v2/deployment API with query parameters: clear_job=true, silences=true, force=true
+3. THE System SHALL include x-mo-target-env header with the selected environment name
+4. THE System SHALL include x-mo-target-tenant header with the selected workspace name
+5. THE System SHALL include authorization header with the workspace token
+6. THE System SHALL construct request body with user_name (workspace name), app_name (extracted from image), image_name (full image name), and params (null)
+7. THE System SHALL log deployment progress to the console log area for each image
+8. THE System SHALL display "Deploying image X of Y: {image_name}" before each deployment
+9. THE System SHALL display deployment result (success/failure) after each API call
+10. WHEN a deployment fails, THE System SHALL stop the deployment process and display an error message
+11. WHEN a deployment fails, THE System SHALL log the error details to the console log area
+12. WHEN all deployments succeed, THE System SHALL display a success message with total count
+13. THE System SHALL disable the Deploy button during deployment execution
+14. THE System SHALL re-enable the Deploy button after deployment completes (success or failure)
+
+### Requirement 24: Deployment Console Logging
+
+**User Story:** As a developer, I want to see detailed deployment logs, so that I can track progress and troubleshoot issues.
+
+#### Acceptance Criteria
+
+1. THE System SHALL display a console log area at the bottom of the Deployment dialog
+2. THE console log area SHALL be scrollable and display text in monospace font
+3. THE System SHALL log the start of deployment process with timestamp
+4. FOR EACH image deployment, THE System SHALL log: image index, total count, image name, app name, target workspace, target environment
+5. THE System SHALL log API request details (URL, headers with masked token, request body)
+6. THE System SHALL log API response status code and message
+7. THE System SHALL log deployment success with green color indicator (if supported) or "SUCCESS" prefix
+8. THE System SHALL log deployment failure with red color indicator (if supported) or "FAILED" prefix
+9. THE System SHALL log the end of deployment process with total success/failure count
+10. THE System SHALL auto-scroll the console log to show the latest entries
+11. THE System SHALL allow users to manually scroll the console log to review previous entries
+
+### Requirement 25: Deployment Error Handling
+
+**User Story:** As a developer, I want clear error messages during deployment, so that I can understand and resolve issues.
+
+#### Acceptance Criteria
+
+1. WHEN workspace token retrieval fails, THE System SHALL display an error message with the failure reason
+2. WHEN environment list loading fails, THE System SHALL display an error message with the failure reason
+3. WHEN image name parsing fails, THE System SHALL log a warning and skip that image
+4. WHEN deployment API call fails, THE System SHALL display the error message from the API response
+5. WHEN deployment API call fails, THE System SHALL stop further deployments
+6. WHEN network errors occur during deployment, THE System SHALL display a user-friendly error message
+7. THE System SHALL log all deployment errors with full details to the console log area
+8. THE System SHALL log all deployment errors to the application log file for debugging
+
+### Requirement 26: Deployment Dialog UI Design
+
+**User Story:** As a developer, I want a modern and intuitive deployment interface, so that the deployment process is easy to use.
+
+#### Acceptance Criteria
+
+1. THE Deployment dialog SHALL use a modern, flat design style consistent with other Tenant CI/CD dialogs
+2. THE System SHALL use the same button styling as existing Tenant CI/CD dialog buttons
+3. THE System SHALL use consistent fonts, colors, and spacing with the existing Tenant CI/CD interface
+4. THE image names textarea SHALL be at least 5 lines tall and expandable
+5. THE workspace and environment dropdowns SHALL be clearly labeled
+6. THE console log area SHALL occupy the bottom third of the dialog
+7. THE console log area SHALL have a light background color to distinguish it from input areas
+8. THE Deploy button SHALL be prominently displayed and use the primary action color
+9. THE dialog SHALL be resizable to allow users to adjust the console log viewing area
+10. THE dialog SHALL have a minimum size of 600x700 pixels

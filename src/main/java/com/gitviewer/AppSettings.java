@@ -560,6 +560,11 @@ public class AppSettings {
     public List<String> getPortalTenantCodes() {
         return portalTenantCodes != null ? new ArrayList<>(portalTenantCodes) : new ArrayList<>();
     }
+    
+    public String getPortalTenantCodesString() {
+        // 从内存中的portalTenantCodes列表格式化为字符串
+        return TenantCICDUtils.formatTenantCodes(portalTenantCodes);
+    }
 
     public void setPortalTenantCodes(List<String> tenantCodes) {
         this.portalTenantCodes = tenantCodes != null ? new ArrayList<>(tenantCodes) : new ArrayList<>();

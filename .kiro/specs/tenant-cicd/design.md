@@ -2210,3 +2210,1223 @@ public void testJSONRequestConstruction() {
 7. **Notifications**: Alert when builds complete or fail
 8. **Multi-Tenant View**: View builds across multiple tenants simultaneously
 9. **Build Templates**: Save and reuse common build configurations
+
+
+## Deployment Feature Design
+
+### Overview
+
+The Deployment feature allows users to deploy Docker images to specific workspace environments. This extends the existing Tenant CI/CD dialog with a new Deployment dialog that provides workspace selection, environment loading, and sequential image deployment with progress feedback.
+
+### Deployment Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   TenantCICDDialog                           │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ Build History Table (with multi-selection)           │  │
+│  │  ☑ image1                                            │  │
+│  │  ☑ image2                                            │  │
+│  │  ☐ image3                                            │  │
+│  └──────────────────────────────────────────────────────┘  │
+│  [Download CSV] [Copy Image Names] [Build] [Deployment]    │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   DeploymentDialog                           │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ Image List                                            │  │
+│  │  ┌────────────────────────────────────────────────┐  │  │
+│  │  │ docker-all.repo.ebaotech.com/thailifedev/...  │  │  │
+│  │  │ docker-all.repo.ebaotech.com/thailifedev/...  │  │  │
+│  │  └────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ Workspace: [Dropdown ▼]                              │  │
+│  │ Environment: [Dropdown ▼]                            │  │
+│  │                                          [Deploy]     │  │
+│  └──────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ Console Log                                           │  │
+│  │  ┌────────────────────────────────────────────────┐  │  │
+│  │  │ [2026-01-21 12:30:15] Starting deployment...  │  │  │
+│  │  │ [2026-01-21 12:30:16] Deploying 1 of 2...     │  │  │
+│  │  └────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                      [Close] │
+└─────────────────────────────────────────────────────────────┘
+```
+
+
+### Component: DeploymentDialog
+
+**Purpose**: Dialog for deploying Docker images to workspace environments
+
+**Responsibilities**:
+- Display selected images from build history or accept manual input
+- Load workspace list from Portal Settings sub-tenant codes
+- Obtain workspace token for selected workspace
+- Load environment list from workspace tenant configuration
+- Validate deployment configuration
+- Execute sequential deployment with progress logging
+- Display deployment results in console log area
+
+**Key Methods**:
+```java
+public class DeploymentDialog extends JDialog {
+    private JTextArea imageListTextArea;
+    private JComboBox<String> workspaceComboBox;
+    private JComboBox<String> environmentComboBox;
+    private JButton deployButton;
+    private JButton closeButton;
+    private JTextArea consoleLogArea;
+    
+    private PortalApiClient apiClient;
+    private String mainTenantToken;
+    private String mainTenantCode;
+    private String workspaceToken;
+    private Map<String, List<String>> tenantSubTenantMap;  // tenant -> sub-tenant codes
+    
+    public DeploymentDialog(Frame parent, PortalApiClient apiClient,
+                           String mainToken, String mainTenant,
+                           List<String> selectedImages);
+    private void initializeUI();
+    private void loadWorkspaceList();
+    private void handleWorkspaceSelection();
+    private void loadEnvironmentList(String workspace);
+    private void handleDeploy();
+    private boolean validateDeploymentConfiguration();
+    private void showDeploymentConfirmation();
+    private void executeDeployment();
+    private String extractAppNameFromImage(String imageName);
+    private void logToConsole(String message);
+}
+```
+
+
+### Sub-Tenant Code Configuration
+
+**Configuration Format**:
+```
+Simple format (no sub-tenant codes):
+stbd,thailife
+
+With sub-tenant codes:
+stbd{stbddev/stbdtst/stbduat/stbdsit},thailife{thailifedev/thailifetest/thailifeuat}
+```
+
+**Parsing Logic**:
+```java
+/**
+ * Parse tenant codes with optional sub-tenant codes
+ * Returns Map<String, List<String>> where key is main tenant code
+ * and value is list of sub-tenant codes (empty if none configured)
+ */
+private Map<String, List<String>> parseTenantCodesWithSubTenants(String tenantCodesStr) {
+    Map<String, List<String>> result = new HashMap<>();
+    
+    if (tenantCodesStr == null || tenantCodesStr.trim().isEmpty()) {
+        return result;
+    }
+    
+    // Split by comma
+    String[] tenants = tenantCodesStr.split(",");
+    
+    for (String tenant : tenants) {
+        tenant = tenant.trim();
+        
+        if (tenant.contains("{")) {
+            // Format: tenant{subtenant1/subtenant2/subtenant3}
+            int braceStart = tenant.indexOf("{");
+            int braceEnd = tenant.indexOf("}");
+            
+            if (braceStart > 0 && braceEnd > braceStart) {
+                String mainTenant = tenant.substring(0, braceStart).trim();
+                String subTenantsStr = tenant.substring(braceStart + 1, braceEnd).trim();
+                
+                List<String> subTenants = new ArrayList<>();
+                if (!subTenantsStr.isEmpty()) {
+                    String[] subTenantArray = subTenantsStr.split("/");
+                    for (String subTenant : subTenantArray) {
+                        subTenants.add(subTenant.trim());
+                    }
+                }
+                
+                result.put(mainTenant, subTenants);
+            }
+        } else {
+            // Simple format: just tenant code
+            result.put(tenant, new ArrayList<>());
+        }
+    }
+    
+    return result;
+}
+```
+
+
+### Workspace Token Management
+
+**Token Separation Strategy**:
+- Main tenant token: Used for build history queries, stored in TenantCICDDialog
+- Workspace token: Used for deployment operations, stored in DeploymentDialog
+- Workspace token does NOT affect or replace main tenant token
+
+**Workspace Token Retrieval**:
+```java
+private void handleWorkspaceSelection() {
+    String selectedWorkspace = (String) workspaceComboBox.getSelectedItem();
+    if (selectedWorkspace == null || selectedWorkspace.isEmpty()) {
+        return;
+    }
+    
+    logToConsole("Loading environments for workspace: " + selectedWorkspace);
+    
+    // Disable environment dropdown during loading
+    environmentComboBox.setEnabled(false);
+    environmentComboBox.removeAllItems();
+    
+    SwingWorker<Void, Void> worker = new SwingWorker<>() {
+        @Override
+        protected Void doInBackground() throws Exception {
+            // Get Portal Settings credentials
+            String username = AppSettings.getInstance().getPortalUsername();
+            String password = AppSettings.getInstance().getPortalPassword();
+            
+            // Get workspace token using workspace as x-mo-tenant-id
+            logger.info("Obtaining workspace token for: {}", selectedWorkspace);
+            TokenResponse tokenResponse = apiClient.getToken(username, password, selectedWorkspace);
+            
+            if (tokenResponse.isSuccess()) {
+                workspaceToken = tokenResponse.getAccessToken();
+                logger.info("Workspace token obtained successfully");
+                
+                // Load environment list using workspace token
+                loadEnvironmentList(selectedWorkspace);
+            } else {
+                throw new IOException("Failed to obtain workspace token: " + tokenResponse.getMessage());
+            }
+            
+            return null;
+        }
+        
+        @Override
+        protected void done() {
+            try {
+                get();
+                environmentComboBox.setEnabled(true);
+            } catch (Exception e) {
+                logger.error("Failed to load workspace token", e);
+                logToConsole("ERROR: Failed to load workspace token: " + e.getMessage());
+                JOptionPane.showMessageDialog(DeploymentDialog.this,
+                    "Failed to load workspace token: " + e.getMessage(),
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    };
+    
+    worker.execute();
+}
+```
+
+
+### Environment List Loading
+
+**API Call**:
+```java
+private void loadEnvironmentList(String workspace) throws IOException {
+    logger.info("Loading environment list for workspace: {}", workspace);
+    
+    // Call tenant config API with workspace token
+    TenantConfig config = apiClient.getTenantConfiguration(workspace, workspaceToken);
+    
+    // Extract environment names from deploy_pipeline.pipeline
+    List<String> environments = new ArrayList<>();
+    if (config.getDeployPipeline() != null && config.getDeployPipeline().getPipeline() != null) {
+        for (PipelineEntry entry : config.getDeployPipeline().getPipeline()) {
+            if (entry.getEnvName() != null && !entry.getEnvName().isEmpty()) {
+                environments.add(entry.getEnvName());
+            }
+        }
+    }
+    
+    logger.info("Loaded {} environments for workspace {}", environments.size(), workspace);
+    
+    // Update UI on EDT
+    SwingUtilities.invokeLater(() -> {
+        environmentComboBox.removeAllItems();
+        for (String env : environments) {
+            environmentComboBox.addItem(env);
+        }
+        
+        if (environments.isEmpty()) {
+            logToConsole("WARNING: No environments found for workspace: " + workspace);
+        } else {
+            logToConsole("Loaded " + environments.size() + " environments");
+        }
+    });
+}
+```
+
+**Data Models for Environment Loading**:
+```java
+public class TenantConfig {
+    private String id;
+    private String userName;
+    private String defaultBranch;
+    private List<String> branchList;
+    private DeployPipeline deployPipeline;
+    
+    // Getters and setters
+}
+
+public class DeployPipeline {
+    private List<PipelineEntry> pipeline;
+    
+    // Getters and setters
+}
+
+public class PipelineEntry {
+    private String envName;
+    private String envType;
+    // Other fields as needed
+    
+    // Getters and setters
+}
+```
+
+
+### Image Name Parsing
+
+**Extraction Logic**:
+```java
+/**
+ * Extract app name from Docker image name
+ * Format: registry/workspace/app:version
+ * Example: docker-all.repo.ebaotech.com/thailifedev/thailife-bs:24.08.22
+ * Returns: thailife-bs
+ */
+private String extractAppNameFromImage(String imageName) {
+    if (imageName == null || imageName.isEmpty()) {
+        logger.warn("Empty image name provided");
+        return null;
+    }
+    
+    try {
+        // Remove version tag if present
+        String imageWithoutTag = imageName;
+        if (imageName.contains(":")) {
+            imageWithoutTag = imageName.substring(0, imageName.lastIndexOf(":"));
+        }
+        
+        // Split by forward slash
+        String[] parts = imageWithoutTag.split("/");
+        
+        // App name is the last part
+        if (parts.length > 0) {
+            String appName = parts[parts.length - 1];
+            logger.debug("Extracted app name '{}' from image '{}'", appName, imageName);
+            return appName;
+        }
+        
+        logger.warn("Could not extract app name from image: {}", imageName);
+        return null;
+        
+    } catch (Exception e) {
+        logger.error("Error parsing image name: {}", imageName, e);
+        return null;
+    }
+}
+```
+
+**Test Cases**:
+```
+Input: docker-all.repo.ebaotech.com/thailifedev/thailife-bs:24.08.22
+Output: thailife-bs
+
+Input: registry.example.com/workspace/my-app:v1.0.0
+Output: my-app
+
+Input: simple-image:latest
+Output: simple-image
+
+Input: no-version-tag
+Output: no-version-tag
+```
+
+
+### Deployment Confirmation Dialog
+
+**Purpose**: Display deployment details for user review before execution
+
+**UI Layout**:
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Confirm Deployment                                    [X]   │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  You are about to deploy the following images:              │
+│                                                              │
+│  Workspace:    thailifedev                                  │
+│  Environment:  imo_kic_gemini_sp3                           │
+│                                                              │
+│  Images (2 total):                                           │
+│    1. docker-all.repo.ebaotech.com/thailifedev/thailife-bs:24.08.22
+│       → App: thailife-bs                                    │
+│    2. docker-all.repo.ebaotech.com/thailifedev/thailife-ui:24.08.22
+│       → App: thailife-ui                                    │
+│                                                              │
+│  WARNING: Deployment will stop on first failure.            │
+│                                                              │
+│                                    [Confirm]  [Cancel]       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Implementation**:
+```java
+private void showDeploymentConfirmation() {
+    String workspace = (String) workspaceComboBox.getSelectedItem();
+    String environment = (String) environmentComboBox.getSelectedItem();
+    String[] images = imageListTextArea.getText().split("\n");
+    
+    StringBuilder message = new StringBuilder();
+    message.append("You are about to deploy the following images:\n\n");
+    message.append("Workspace:    ").append(workspace).append("\n");
+    message.append("Environment:  ").append(environment).append("\n\n");
+    message.append("Images (").append(images.length).append(" total):\n");
+    
+    for (int i = 0; i < images.length; i++) {
+        String image = images[i].trim();
+        if (!image.isEmpty()) {
+            String appName = extractAppNameFromImage(image);
+            message.append("  ").append(i + 1).append(". ").append(image).append("\n");
+            message.append("     → App: ").append(appName != null ? appName : "UNKNOWN").append("\n");
+        }
+    }
+    
+    message.append("\nWARNING: Deployment will stop on first failure.");
+    
+    int choice = JOptionPane.showConfirmDialog(this,
+        message.toString(),
+        "Confirm Deployment",
+        JOptionPane.OK_CANCEL_OPTION,
+        JOptionPane.WARNING_MESSAGE);
+    
+    if (choice == JOptionPane.OK_OPTION) {
+        executeDeployment();
+    }
+}
+```
+
+
+### Deployment Execution
+
+**Sequential Deployment Strategy**:
+```java
+private void executeDeployment() {
+    String workspace = (String) workspaceComboBox.getSelectedItem();
+    String environment = (String) environmentComboBox.getSelectedItem();
+    String[] images = imageListTextArea.getText().split("\n");
+    
+    // Filter empty lines
+    List<String> imageList = Arrays.stream(images)
+        .map(String::trim)
+        .filter(s -> !s.isEmpty())
+        .collect(Collectors.toList());
+    
+    if (imageList.isEmpty()) {
+        logToConsole("ERROR: No images to deploy");
+        return;
+    }
+    
+    // Disable deploy button during deployment
+    deployButton.setEnabled(false);
+    deployButton.setText("Deploying...");
+    
+    logToConsole("========================================");
+    logToConsole("Starting deployment process");
+    logToConsole("Workspace: " + workspace);
+    logToConsole("Environment: " + environment);
+    logToConsole("Total images: " + imageList.size());
+    logToConsole("========================================");
+    
+    SwingWorker<Void, String> worker = new SwingWorker<>() {
+        private int successCount = 0;
+        private int failureCount = 0;
+        
+        @Override
+        protected Void doInBackground() throws Exception {
+            for (int i = 0; i < imageList.size(); i++) {
+                String imageName = imageList.get(i);
+                int imageIndex = i + 1;
+                
+                publish(String.format("[%d/%d] Processing: %s", imageIndex, imageList.size(), imageName));
+                
+                // Extract app name
+                String appName = extractAppNameFromImage(imageName);
+                if (appName == null) {
+                    publish("ERROR: Could not extract app name from: " + imageName);
+                    publish("Skipping this image...");
+                    failureCount++;
+                    continue;
+                }
+                
+                publish("  App name: " + appName);
+                publish("  Target workspace: " + workspace);
+                publish("  Target environment: " + environment);
+                
+                try {
+                    // Call deployment API
+                    apiClient.deployImage(workspace, environment, workspaceToken, 
+                                         workspace, appName, imageName);
+                    
+                    publish("  ✓ SUCCESS: Deployment completed");
+                    successCount++;
+                    
+                } catch (IOException e) {
+                    publish("  ✗ FAILED: " + e.getMessage());
+                    failureCount++;
+                    
+                    // Stop on first failure
+                    publish("========================================");
+                    publish("Deployment stopped due to failure");
+                    publish("Success: " + successCount + ", Failed: " + failureCount);
+                    publish("========================================");
+                    throw e;
+                }
+                
+                publish("");  // Empty line for readability
+            }
+            
+            return null;
+        }
+        
+        @Override
+        protected void process(List<String> chunks) {
+            for (String message : chunks) {
+                logToConsole(message);
+            }
+        }
+        
+        @Override
+        protected void done() {
+            deployButton.setEnabled(true);
+            deployButton.setText("Deploy");
+            
+            try {
+                get();
+                logToConsole("========================================");
+                logToConsole("Deployment completed successfully!");
+                logToConsole("Total deployed: " + successCount);
+                logToConsole("========================================");
+                
+                JOptionPane.showMessageDialog(DeploymentDialog.this,
+                    "Deployment completed successfully!\n\n" +
+                    "Total deployed: " + successCount,
+                    "Deployment Complete",
+                    JOptionPane.INFORMATION_MESSAGE);
+                    
+            } catch (Exception e) {
+                logger.error("Deployment failed", e);
+                logToConsole("Deployment process terminated with errors");
+                
+                JOptionPane.showMessageDialog(DeploymentDialog.this,
+                    "Deployment failed: " + e.getMessage() + "\n\n" +
+                    "Success: " + successCount + ", Failed: " + failureCount,
+                    "Deployment Failed",
+                    JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    };
+    
+    worker.execute();
+}
+```
+
+
+### Console Logging
+
+**Console Log Area Configuration**:
+```java
+private void initializeConsoleLog() {
+    consoleLogArea = new JTextArea();
+    consoleLogArea.setEditable(false);
+    consoleLogArea.setFont(new Font("Consolas", Font.PLAIN, 12));
+    consoleLogArea.setBackground(new Color(245, 245, 245));  // Light gray
+    consoleLogArea.setForeground(Color.BLACK);
+    consoleLogArea.setLineWrap(true);
+    consoleLogArea.setWrapStyleWord(true);
+    
+    JScrollPane scrollPane = new JScrollPane(consoleLogArea);
+    scrollPane.setPreferredSize(new Dimension(0, 200));  // Bottom third of dialog
+    scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+    
+    return scrollPane;
+}
+
+/**
+ * Log message to console with timestamp
+ * Auto-scrolls to bottom to show latest entries
+ */
+private void logToConsole(String message) {
+    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    String timestamp = sdf.format(new Date());
+    String logEntry = "[" + timestamp + "] " + message + "\n";
+    
+    SwingUtilities.invokeLater(() -> {
+        consoleLogArea.append(logEntry);
+        // Auto-scroll to bottom
+        consoleLogArea.setCaretPosition(consoleLogArea.getDocument().getLength());
+    });
+    
+    // Also log to application logger
+    logger.info("Console: {}", message);
+}
+```
+
+**Console Log Content Examples**:
+```
+[2026-01-21 12:30:15] ========================================
+[2026-01-21 12:30:15] Starting deployment process
+[2026-01-21 12:30:15] Workspace: thailifedev
+[2026-01-21 12:30:15] Environment: imo_kic_gemini_sp3
+[2026-01-21 12:30:15] Total images: 2
+[2026-01-21 12:30:15] ========================================
+[2026-01-21 12:30:16] [1/2] Processing: docker-all.repo.ebaotech.com/thailifedev/thailife-bs:24.08.22
+[2026-01-21 12:30:16]   App name: thailife-bs
+[2026-01-21 12:30:16]   Target workspace: thailifedev
+[2026-01-21 12:30:16]   Target environment: imo_kic_gemini_sp3
+[2026-01-21 12:30:18]   ✓ SUCCESS: Deployment completed
+[2026-01-21 12:30:18] 
+[2026-01-21 12:30:18] [2/2] Processing: docker-all.repo.ebaotech.com/thailifedev/thailife-ui:24.08.22
+[2026-01-21 12:30:18]   App name: thailife-ui
+[2026-01-21 12:30:18]   Target workspace: thailifedev
+[2026-01-21 12:30:18]   Target environment: imo_kic_gemini_sp3
+[2026-01-21 12:30:20]   ✓ SUCCESS: Deployment completed
+[2026-01-21 12:30:20] 
+[2026-01-21 12:30:20] ========================================
+[2026-01-21 12:30:20] Deployment completed successfully!
+[2026-01-21 12:30:20] Total deployed: 2
+[2026-01-21 12:30:20] ========================================
+```
+
+
+### PortalApiClient Extensions for Deployment
+
+**New Method**:
+```java
+/**
+ * Deploy Docker image to workspace environment
+ * 
+ * @param workspace Target workspace (sub-tenant code)
+ * @param environment Target environment name
+ * @param workspaceToken Bearer token for workspace
+ * @param userName Workspace name (same as workspace parameter)
+ * @param appName Application name extracted from image
+ * @param imageName Full Docker image name with tag
+ * @throws IOException if deployment fails
+ */
+public void deployImage(String workspace, String environment, String workspaceToken,
+                       String userName, String appName, String imageName) throws IOException {
+    logger.info("=== Deployment API Call ===");
+    logger.info("Workspace: {}", workspace);
+    logger.info("Environment: {}", environment);
+    logger.info("App: {}", appName);
+    logger.info("Image: {}", imageName);
+    
+    // Build URL with query parameters
+    String url = BASE_URL + "/api/mo-fo/1.0/ops/v2/deployment" +
+                 "?clear_job=true&silences=true&force=true";
+    
+    // Build headers
+    Map<String, String> headers = new HashMap<>();
+    headers.put("Content-Type", "application/json");
+    headers.put("x-mo-target-env", environment);
+    headers.put("x-mo-target-tenant", workspace);
+    headers.put("authorization", "Bearer " + workspaceToken);
+    
+    // Build request body
+    JSONObject requestBody = new JSONObject();
+    requestBody.put("user_name", userName);
+    requestBody.put("app_name", appName);
+    requestBody.put("image_name", imageName);
+    requestBody.put("params", JSONObject.NULL);
+    
+    logger.info("Request body: {}", requestBody.toString(2));
+    
+    // Send request
+    String response = sendPostRequest(url, headers, requestBody.toString());
+    
+    logger.info("Deployment response: {}", response);
+    
+    // Parse response to check for errors
+    JSONObject responseObj = new JSONObject(response);
+    String code = responseObj.optString("code", "");
+    String message = responseObj.optString("message", "");
+    
+    if (!code.equals("i_common_success")) {
+        throw new IOException("Deployment failed: " + message);
+    }
+    
+    logger.info("Deployment successful");
+}
+```
+
+
+### PortalSettingsDialog Extensions
+
+**Update to Support Sub-Tenant Codes**:
+```java
+public class PortalSettingsDialog extends JDialog {
+    // ... existing fields ...
+    
+    private void initializeUI() {
+        // ... existing UI setup ...
+        
+        // Update tenant codes field hint
+        JLabel tenantCodesHint = new JLabel(
+            "<html><i>Format: tenant1,tenant2 or tenant{sub1/sub2},tenant2</i></html>");
+        tenantCodesHint.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 11));
+        tenantCodesHint.setForeground(Color.GRAY);
+        
+        // Add hint below tenant codes field
+        // ... rest of UI setup ...
+    }
+    
+    private void handleSave() {
+        String username = usernameField.getText().trim();
+        String password = new String(passwordField.getPassword());
+        String tenantCodes = tenantCodesField.getText().trim();
+        
+        // Validate input
+        if (username.isEmpty() || password.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                "Username and password cannot be empty",
+                "Validation Error",
+                JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        // Save to settings
+        AppSettings settings = AppSettings.getInstance();
+        settings.setPortalUsername(username);
+        settings.setPortalPassword(password);  // Will be encrypted
+        settings.setPortalTenantCodes(tenantCodes);  // Save as-is, parsing happens when needed
+        settings.saveSettings();
+        
+        logger.info("Portal settings saved successfully");
+        JOptionPane.showMessageDialog(this,
+            "Settings saved successfully",
+            "Success",
+            JOptionPane.INFORMATION_MESSAGE);
+        
+        dispose();
+    }
+}
+```
+
+**AppSettings Extensions**:
+```java
+public class AppSettings {
+    // ... existing fields ...
+    private String portalTenantCodes;  // Store raw string with sub-tenant codes
+    
+    public String getPortalTenantCodes() {
+        return portalTenantCodes != null ? portalTenantCodes : "";
+    }
+    
+    public void setPortalTenantCodes(String tenantCodes) {
+        this.portalTenantCodes = tenantCodes;
+    }
+    
+    // In loadSettings()
+    portalTenantCodes = properties.getProperty("portal.tenant.codes", "");
+    
+    // In saveSettings()
+    properties.setProperty("portal.tenant.codes", portalTenantCodes);
+}
+```
+
+
+### TenantCICDDialog Integration
+
+**Add Deployment Button**:
+```java
+// In TenantCICDDialog.initializeUI()
+private void createActionButtons() {
+    JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+    
+    // ... existing buttons (Download CSV, Copy Image Names, Build) ...
+    
+    // Add Deployment button
+    deploymentButton = createStyledButton("Deployment");
+    deploymentButton.setEnabled(false);  // Disabled until connected
+    deploymentButton.addActionListener(e -> handleDeployment());
+    buttonPanel.add(deploymentButton);
+    
+    return buttonPanel;
+}
+
+/**
+ * Handle Deployment button click
+ * Opens DeploymentDialog with selected images from build history table
+ */
+private void handleDeployment() {
+    logger.info("Opening Deployment dialog");
+    
+    if (currentToken == null || currentToken.isEmpty()) {
+        JOptionPane.showMessageDialog(this,
+            "Please connect to a tenant first",
+            "Not Connected",
+            JOptionPane.WARNING_MESSAGE);
+        return;
+    }
+    
+    // Get selected images from table
+    List<String> selectedImages = getSelectedImagesFromTable();
+    
+    // Open deployment dialog
+    DeploymentDialog dialog = new DeploymentDialog(
+        (Frame) SwingUtilities.getWindowAncestor(this),
+        apiClient,
+        currentToken,
+        currentTenant,
+        selectedImages
+    );
+    dialog.setVisible(true);
+}
+
+/**
+ * Extract image names from selected rows in build history table
+ * Returns empty list if no rows selected
+ */
+private List<String> getSelectedImagesFromTable() {
+    List<String> images = new ArrayList<>();
+    int[] selectedRows = resultsTable.getSelectedRows();
+    
+    for (int row : selectedRows) {
+        // Convert view row to model row (in case table is sorted)
+        int modelRow = resultsTable.convertRowIndexToModel(row);
+        BuildResult result = tableModel.getResults().get(modelRow);
+        
+        String imageName = result.getImageName();
+        if (imageName != null && !imageName.isEmpty()) {
+            images.add(imageName);
+        }
+    }
+    
+    logger.info("Selected {} images from build history table", images.size());
+    return images;
+}
+
+// Update connection handler to enable Deployment button
+private void handleConnect() {
+    // ... existing connection logic ...
+    
+    // On successful connection:
+    deploymentButton.setEnabled(true);
+}
+```
+
+
+### Deployment Dialog UI Layout
+
+**Complete UI Structure**:
+```java
+private void initializeUI() {
+    setTitle("Deployment - " + mainTenantCode);
+    setModal(true);
+    setSize(700, 800);
+    setMinimumSize(new Dimension(600, 700));
+    setLocationRelativeTo(getParent());
+    setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+    
+    // Main panel
+    JPanel mainPanel = new JPanel();
+    mainPanel.setLayout(new BorderLayout(10, 10));
+    mainPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+    mainPanel.setBackground(Color.WHITE);
+    
+    // Top section: Image list
+    JPanel imagePanel = createImageListPanel();
+    
+    // Middle section: Workspace and Environment selection
+    JPanel configPanel = createConfigurationPanel();
+    
+    // Bottom section: Console log
+    JPanel consolePanel = createConsolePanel();
+    
+    // Combine top and middle
+    JPanel topPanel = new JPanel(new BorderLayout(10, 10));
+    topPanel.setBackground(Color.WHITE);
+    topPanel.add(imagePanel, BorderLayout.CENTER);
+    topPanel.add(configPanel, BorderLayout.SOUTH);
+    
+    // Add to main panel
+    mainPanel.add(topPanel, BorderLayout.CENTER);
+    mainPanel.add(consolePanel, BorderLayout.SOUTH);
+    
+    add(mainPanel);
+}
+
+private JPanel createImageListPanel() {
+    JPanel panel = new JPanel(new BorderLayout(5, 5));
+    panel.setBackground(Color.WHITE);
+    
+    JLabel label = new JLabel("Image List:");
+    label.setFont(new Font("Microsoft YaHei UI", Font.BOLD, 14));
+    
+    imageListTextArea = new JTextArea(5, 50);
+    imageListTextArea.setFont(new Font("Consolas", Font.PLAIN, 12));
+    imageListTextArea.setLineWrap(true);
+    imageListTextArea.setWrapStyleWord(false);
+    
+    JScrollPane scrollPane = new JScrollPane(imageListTextArea);
+    scrollPane.setPreferredSize(new Dimension(0, 150));
+    
+    panel.add(label, BorderLayout.NORTH);
+    panel.add(scrollPane, BorderLayout.CENTER);
+    
+    return panel;
+}
+
+private JPanel createConfigurationPanel() {
+    JPanel panel = new JPanel(new GridBagLayout());
+    panel.setBackground(Color.WHITE);
+    GridBagConstraints gbc = new GridBagConstraints();
+    gbc.insets = new Insets(5, 5, 5, 5);
+    gbc.fill = GridBagConstraints.HORIZONTAL;
+    
+    Font labelFont = new Font("Microsoft YaHei UI", Font.PLAIN, 14);
+    Font fieldFont = new Font("Microsoft YaHei UI", Font.PLAIN, 14);
+    
+    // Workspace row
+    gbc.gridx = 0; gbc.gridy = 0; gbc.weightx = 0;
+    JLabel workspaceLabel = new JLabel("Workspace:");
+    workspaceLabel.setFont(labelFont);
+    panel.add(workspaceLabel, gbc);
+    
+    gbc.gridx = 1; gbc.weightx = 1;
+    workspaceComboBox = new JComboBox<>();
+    workspaceComboBox.setFont(fieldFont);
+    workspaceComboBox.addActionListener(e -> handleWorkspaceSelection());
+    panel.add(workspaceComboBox, gbc);
+    
+    // Environment row
+    gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0;
+    JLabel environmentLabel = new JLabel("Environment:");
+    environmentLabel.setFont(labelFont);
+    panel.add(environmentLabel, gbc);
+    
+    gbc.gridx = 1; gbc.weightx = 1;
+    environmentComboBox = new JComboBox<>();
+    environmentComboBox.setFont(fieldFont);
+    environmentComboBox.setEnabled(false);
+    panel.add(environmentComboBox, gbc);
+    
+    // Deploy button row
+    gbc.gridx = 1; gbc.gridy = 2; gbc.anchor = GridBagConstraints.EAST;
+    deployButton = createStyledButton("Deploy");
+    deployButton.addActionListener(e -> handleDeploy());
+    panel.add(deployButton, gbc);
+    
+    return panel;
+}
+
+private JPanel createConsolePanel() {
+    JPanel panel = new JPanel(new BorderLayout(5, 5));
+    panel.setBackground(Color.WHITE);
+    
+    JLabel label = new JLabel("Console Log:");
+    label.setFont(new Font("Microsoft YaHei UI", Font.BOLD, 14));
+    
+    consoleLogArea = new JTextArea();
+    consoleLogArea.setEditable(false);
+    consoleLogArea.setFont(new Font("Consolas", Font.PLAIN, 12));
+    consoleLogArea.setBackground(new Color(245, 245, 245));
+    consoleLogArea.setLineWrap(true);
+    consoleLogArea.setWrapStyleWord(true);
+    
+    JScrollPane scrollPane = new JScrollPane(consoleLogArea);
+    scrollPane.setPreferredSize(new Dimension(0, 250));
+    scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+    
+    panel.add(label, BorderLayout.NORTH);
+    panel.add(scrollPane, BorderLayout.CENTER);
+    
+    return panel;
+}
+```
+
+
+### Deployment Validation
+
+**Validation Rules**:
+```java
+private boolean validateDeploymentConfiguration() {
+    // Check image list
+    String imageText = imageListTextArea.getText().trim();
+    if (imageText.isEmpty()) {
+        JOptionPane.showMessageDialog(this,
+            "Please enter at least one image name",
+            "Validation Error",
+            JOptionPane.WARNING_MESSAGE);
+        return false;
+    }
+    
+    // Check workspace selection
+    String workspace = (String) workspaceComboBox.getSelectedItem();
+    if (workspace == null || workspace.isEmpty()) {
+        JOptionPane.showMessageDialog(this,
+            "Please select a workspace",
+            "Validation Error",
+            JOptionPane.WARNING_MESSAGE);
+        return false;
+    }
+    
+    // Check environment selection
+    String environment = (String) environmentComboBox.getSelectedItem();
+    if (environment == null || environment.isEmpty()) {
+        JOptionPane.showMessageDialog(this,
+            "Please select an environment",
+            "Validation Error",
+            JOptionPane.WARNING_MESSAGE);
+        return false;
+    }
+    
+    // Check workspace token
+    if (workspaceToken == null || workspaceToken.isEmpty()) {
+        JOptionPane.showMessageDialog(this,
+            "Workspace token not available. Please reselect workspace.",
+            "Validation Error",
+            JOptionPane.WARNING_MESSAGE);
+        return false;
+    }
+    
+    return true;
+}
+```
+
+
+### Error Handling for Deployment
+
+**Network Errors**:
+```java
+try {
+    apiClient.deployImage(workspace, environment, workspaceToken, 
+                         workspace, appName, imageName);
+} catch (IOException e) {
+    logger.error("Deployment failed for image: {}", imageName, e);
+    logToConsole("ERROR: Network error - " + e.getMessage());
+    throw e;  // Stop deployment process
+}
+```
+
+**Authentication Errors**:
+```java
+try {
+    TokenResponse tokenResponse = apiClient.getToken(username, password, workspace);
+    if (!tokenResponse.isSuccess()) {
+        throw new IOException("Authentication failed: " + tokenResponse.getMessage());
+    }
+} catch (IOException e) {
+    logger.error("Failed to obtain workspace token", e);
+    logToConsole("ERROR: Authentication failed for workspace: " + workspace);
+    JOptionPane.showMessageDialog(this,
+        "Failed to authenticate with workspace.\n" +
+        "Please check Portal Settings credentials.",
+        "Authentication Error",
+        JOptionPane.ERROR_MESSAGE);
+}
+```
+
+**Image Parsing Errors**:
+```java
+String appName = extractAppNameFromImage(imageName);
+if (appName == null) {
+    logger.warn("Could not extract app name from image: {}", imageName);
+    logToConsole("WARNING: Skipping invalid image: " + imageName);
+    continue;  // Skip this image, continue with next
+}
+```
+
+**API Response Errors**:
+```java
+JSONObject responseObj = new JSONObject(response);
+String code = responseObj.optString("code", "");
+String message = responseObj.optString("message", "");
+
+if (!code.equals("i_common_success")) {
+    String errorMsg = "Deployment API returned error: " + message;
+    logger.error(errorMsg);
+    logToConsole("ERROR: " + errorMsg);
+    throw new IOException(errorMsg);
+}
+```
+
+
+### Resource Cleanup for Deployment
+
+**DeploymentDialog Disposal**:
+```java
+@Override
+public void dispose() {
+    logger.info("Disposing DeploymentDialog");
+    
+    // Cancel any running workers
+    if (currentWorker != null && !currentWorker.isDone()) {
+        logger.info("Cancelling running deployment worker");
+        currentWorker.cancel(true);
+        currentWorker = null;
+    }
+    
+    // Clear sensitive data
+    workspaceToken = null;
+    mainTenantToken = null;
+    
+    // Clear cached data
+    if (tenantSubTenantMap != null) {
+        tenantSubTenantMap.clear();
+    }
+    
+    logger.info("DeploymentDialog disposed");
+    super.dispose();
+}
+```
+
+### Deployment Logging Strategy
+
+**Comprehensive Logging**:
+```java
+// Dialog lifecycle
+logger.info("DeploymentDialog opened for tenant: {}", mainTenantCode);
+logger.info("Pre-selected {} images from build history", selectedImages.size());
+logger.info("Loaded {} workspaces for tenant {}", workspaces.size(), mainTenantCode);
+
+// User actions
+logger.info("User selected workspace: {}", workspace);
+logger.info("Obtaining workspace token for: {}", workspace);
+logger.info("User selected environment: {}", environment);
+logger.info("User clicked Deploy button");
+
+// API calls
+logger.info("Calling deployment API for image: {}", imageName);
+logger.info("Deployment request: workspace={}, env={}, app={}", workspace, environment, appName);
+logger.info("Deployment response code: {}", code);
+
+// Results
+logger.info("Deployment successful for image: {}", imageName);
+logger.error("Deployment failed for image: {}", imageName, exception);
+logger.info("Deployment process completed: success={}, failed={}", successCount, failureCount);
+```
+
+
+### Deployment Testing Strategy
+
+**Unit Testing**:
+```java
+@Test
+public void testSubTenantCodeParsing() {
+    // Test simple format
+    Map<String, List<String>> result1 = parseTenantCodesWithSubTenants("stbd,thailife");
+    assertEquals(2, result1.size());
+    assertTrue(result1.get("stbd").isEmpty());
+    assertTrue(result1.get("thailife").isEmpty());
+    
+    // Test with sub-tenant codes
+    Map<String, List<String>> result2 = parseTenantCodesWithSubTenants(
+        "stbd{stbddev/stbdtst},thailife{thailifedev/thailifetest}");
+    assertEquals(2, result2.size());
+    assertEquals(2, result2.get("stbd").size());
+    assertTrue(result2.get("stbd").contains("stbddev"));
+    assertTrue(result2.get("stbd").contains("stbdtst"));
+    assertEquals(2, result2.get("thailife").size());
+}
+
+@Test
+public void testImageNameParsing() {
+    // Test standard format
+    String app1 = extractAppNameFromImage(
+        "docker-all.repo.ebaotech.com/thailifedev/thailife-bs:24.08.22");
+    assertEquals("thailife-bs", app1);
+    
+    // Test without version
+    String app2 = extractAppNameFromImage(
+        "registry.example.com/workspace/my-app");
+    assertEquals("my-app", app2);
+    
+    // Test simple format
+    String app3 = extractAppNameFromImage("simple-image:latest");
+    assertEquals("simple-image", app3);
+    
+    // Test invalid format
+    String app4 = extractAppNameFromImage("");
+    assertNull(app4);
+}
+
+@Test
+public void testDeploymentValidation() {
+    // Test with missing image list
+    assertFalse(validateDeploymentConfiguration("", "workspace1", "env1", "token"));
+    
+    // Test with missing workspace
+    assertFalse(validateDeploymentConfiguration("image1", null, "env1", "token"));
+    
+    // Test with missing environment
+    assertFalse(validateDeploymentConfiguration("image1", "workspace1", null, "token"));
+    
+    // Test with missing token
+    assertFalse(validateDeploymentConfiguration("image1", "workspace1", "env1", null));
+    
+    // Test with valid configuration
+    assertTrue(validateDeploymentConfiguration("image1", "workspace1", "env1", "token"));
+}
+```
+
+**Integration Testing Scenarios**:
+1. Open Deployment dialog after connecting to tenant
+2. Load workspace list from Portal Settings
+3. Select workspace and verify token retrieval
+4. Load environment list for selected workspace
+5. Enter image names and validate
+6. Deploy single image successfully
+7. Deploy multiple images sequentially
+8. Handle deployment failure and stop process
+9. Verify console log displays all steps
+10. Verify workspace token does not affect main tenant token
+
+**Manual Testing Checklist**:
+- [ ] Deployment button enabled only when connected
+- [ ] Deployment dialog opens with pre-selected images
+- [ ] Image list textarea is editable
+- [ ] Workspace dropdown loads from Portal Settings
+- [ ] Environment dropdown loads after workspace selection
+- [ ] Validation prevents deployment with invalid data
+- [ ] Confirmation dialog shows correct details
+- [ ] Sequential deployment executes correctly
+- [ ] Console log displays progress in real-time
+- [ ] Deployment stops on first failure
+- [ ] Success message displays after completion
+- [ ] Error messages display for failures
+- [ ] Main tenant token remains unchanged
+- [ ] Resource cleanup on dialog close
+
+
+## Future Enhancements
+
+1. **Build Details View**: Click on build row in results table to view detailed build information and logs
+2. **Build Status Monitoring**: Real-time monitoring of build progress after submission
+3. **Favorites**: Allow users to favorite frequently queried apps or plans
+4. **Export Options**: Add JSON and Excel export formats
+5. **Advanced Filters**: Add date range, status filters
+6. **Build Comparison**: Compare builds across different versions
+7. **Notifications**: Alert when builds complete or fail
+8. **Multi-Tenant View**: View builds across multiple tenants simultaneously
+9. **Build Templates**: Save and reuse common build configurations
+10. **Deployment History**: Track and view previous deployment operations
+11. **Parallel Deployment**: Deploy multiple images in parallel (with configurable concurrency)
+12. **Deployment Rollback**: Ability to rollback to previous image versions
+13. **Deployment Scheduling**: Schedule deployments for specific times
+14. **Deployment Approval Workflow**: Multi-step approval process for production deployments

@@ -1,4 +1,5 @@
 com\gitviewer\SettingsDialog.class
+com\gitviewer\TenantConfig$PipelineEntry.class
 com\gitviewer\RepoDetailsDialog$1.class
 com\gitviewer\InfoPanel$2.class
 com\gitviewer\DirectoryTreePanel.class
@@ -12,6 +13,7 @@ com\gitviewer\FileSearchDialog$3.class
 com\gitviewer\JenkinsBrowserDialog$4.class
 com\gitviewer\InfoPanel$11.class
 com\gitviewer\BatchCherryPickResultDialog$1.class
+com\gitviewer\DeploymentDialog$1.class
 com\gitviewer\BuildPackageDialog$CheckboxTransferHandler.class
 com\gitviewer\GitInfoExtractor$GitRepositoryInfo.class
 com\gitviewer\BuildOutputDialog$1.class
@@ -33,6 +35,7 @@ com\gitviewer\InfoPanel$BranchCellRenderer.class
 com\gitviewer\BuildResult.class
 com\gitviewer\InfoPanel$CheckBoxCellRenderer.class
 com\gitviewer\BuildPackageDialog$5.class
+com\gitviewer\DeploymentPodListDialog$1.class
 com\gitviewer\FavoritesPanel.class
 com\gitviewer\TenantCICDDialog$10.class
 com\gitviewer\RepoDetailsDialog$2.class
@@ -40,9 +43,13 @@ com\gitviewer\JenkinsJob.class
 com\gitviewer\InfoPanel$CommitSearchResultDialog.class
 com\gitviewer\JenkinsApiClient.class
 com\gitviewer\DirectoryTreePanel$3.class
+com\gitviewer\DeploymentPodLogDialog.class
 com\gitviewer\GitLabProject.class
+com\gitviewer\DeploymentPodListDialog$2.class
+com\gitviewer\TenantConfig$DeployPipeline.class
 com\gitviewer\InfoPanel$12.class
 com\gitviewer\JenkinsBuildParametersDialog$1.class
+com\gitviewer\DeploymentDialog$2.class
 com\gitviewer\PortalApiClient.class
 com\gitviewer\CheckoutGitProjectDialog$CheckBoxCellEditor$1.class
 com\gitviewer\InfoPanel$CommitSearchResultDialog$ChangedFilesRenderer.class
@@ -51,6 +58,7 @@ com\gitviewer\BatchCherryPickDialog$2.class
 com\gitviewer\FileDiffDialog$1.class
 com\gitviewer\AIChatDialog$1.class
 com\gitviewer\RepoDetailsDialog$5.class
+com\gitviewer\DeploymentDialog$3.class
 com\gitviewer\InfoPanel$CheckBoxCellEditor.class
 com\gitviewer\JenkinsStageLogDialog$3.class
 com\gitviewer\GitOperations$GitOperation.class
@@ -66,6 +74,7 @@ com\gitviewer\JenkinsBrowserDialog$3.class
 com\gitviewer\AISettingsDialog.class
 com\gitviewer\FileSearchDialog.class
 com\gitviewer\BuildOutputDialog.class
+com\gitviewer\DeploymentPodListDialog.class
 com\gitviewer\RepoDetailsDialog$3.class
 com\gitviewer\JenkinsStageLogDialog$PortalLogInfo.class
 com\gitviewer\FavoritesPanel$FavoriteJobRenderer.class
@@ -88,6 +97,7 @@ com\gitviewer\TokenResponse.class
 com\gitviewer\CheckoutGitProjectDialog$BatchDownloadResult.class
 com\gitviewer\TenantCICDDialog$2.class
 com\gitviewer\GitOperations.class
+com\gitviewer\DeploymentDialog.class
 com\gitviewer\PasswordEncryption.class
 com\gitviewer\BatchCherryPickDialog$CherryPickStatus.class
 com\gitviewer\JenkinsStageLogDialog.class
@@ -126,6 +136,7 @@ com\gitviewer\MockJenkinsServer.class
 com\gitviewer\InfoPanel$CommitSearchResultDialog$2.class
 com\gitviewer\CheckoutGitProjectDialog$CheckBoxCellRenderer$1.class
 com\gitviewer\JenkinsBrowserDialog$1.class
+com\gitviewer\DeploymentPod.class
 com\gitviewer\BuildPackageDialog$6.class
 com\gitviewer\JenkinsJobDetailsDialog$BuildListCellRenderer.class
 com\gitviewer\TenantCICDDialog$5.class
@@ -179,6 +190,7 @@ com\gitviewer\InfoPanel$CommitSearchResultDialog$4.class
 com\gitviewer\BranchFilterDialog$2.class
 com\gitviewer\CheckoutGitProjectDialog$6.class
 com\gitviewer\InfoPanel$8.class
+com\gitviewer\DeploymentPodLogDialog$1.class
 com\gitviewer\AppSettings.class
 com\gitviewer\JenkinsItem.class
 com\gitviewer\JenkinsBuildParameter.class
@@ -188,6 +200,7 @@ com\gitviewer\BuildPackageDialog$2.class
 com\gitviewer\TenantCICDDialog$8.class
 com\gitviewer\CheckoutGitProjectDialog$5.class
 com\gitviewer\InfoPanel$7.class
+com\gitviewer\DeploymentPodListDialog$PodTableModel.class
 com\gitviewer\JenkinsStageViewPanel.class
 com\gitviewer\JenkinsJobDetailsDialog$4.class
 com\gitviewer\InfoPanel$CommitSearchResult.class

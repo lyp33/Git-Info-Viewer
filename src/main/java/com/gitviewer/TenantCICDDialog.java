@@ -49,6 +49,7 @@ public class TenantCICDDialog extends JDialog {
     private JButton downloadCsvButton;
     private JButton copyImageNamesButton;
     private JButton buildButton;
+    private JButton deployButton;
     
     // Loading Indicator
     private JLabel loadingLabel;
@@ -354,7 +355,8 @@ public class TenantCICDDialog extends JDialog {
         }
         
         // 设置Build Status列的渲染器（颜色编码）
-        resultsTable.getColumnModel().getColumn(2).setCellRenderer(new BuildStatusCellRenderer());
+        // 注意：由于添加了复选框列，Build Status现在是第4列（索引3）
+        resultsTable.getColumnModel().getColumn(3).setCellRenderer(new BuildStatusCellRenderer());
         
         // 为Git Branch列添加过滤图标
         addBranchFilterIcon();
@@ -440,6 +442,20 @@ public class TenantCICDDialog extends JDialog {
         buildButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         buildButton.addActionListener(e -> handleBuild());
         panel.add(buildButton);
+        
+        // Deployment 按钮 - 深绿色
+        deployButton = new JButton("<html><font color='white'><b>Deployment</b></font></html>");
+        deployButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        deployButton.setPreferredSize(new Dimension(120, 35));
+        deployButton.setBackground(new Color(34, 139, 34));
+        deployButton.setForeground(Color.WHITE);
+        deployButton.setOpaque(true);
+        deployButton.setContentAreaFilled(true);
+        deployButton.setFocusPainted(false);
+        deployButton.setBorderPainted(false);
+        deployButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        deployButton.addActionListener(e -> handleDeployment());
+        panel.add(deployButton);
         
         // Close 按钮 - 灰色
         JButton closeButton = new JButton("<html><font color='white'><b>Close</b></font></html>");
@@ -807,21 +823,24 @@ public class TenantCICDDialog extends JDialog {
         logger.debug("Loading Portal settings");
         
         AppSettings settings = AppSettings.getInstance();
-        List<String> tenantCodes = settings.getPortalTenantCodes();
+        String tenantCodesStr = settings.getPortalTenantCodesString();
         
-        // 填充tenant下拉框
+        // 解析租户代码，提取主租户名称（不包含子租户）
+        java.util.Map<String, List<String>> tenantMap = TenantCICDUtils.parseTenantCodesWithSubTenants(tenantCodesStr);
+        
+        // 填充tenant下拉框，只显示主租户名称
         DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
-        for (String code : tenantCodes) {
-            model.addElement(code);
+        for (String mainTenant : tenantMap.keySet()) {
+            model.addElement(mainTenant);  // 只添加主租户名称，例如 "stbd"
         }
         tenantComboBox.setModel(model);
         
         // 设置creator默认值为Portal username
         creatorField.setText(settings.getPortalUsername());
         
-        logger.info("Loaded {} tenant codes", tenantCodes.size());
+        logger.info("Loaded {} tenant codes", tenantMap.size());
         
-        if (tenantCodes.isEmpty()) {
+        if (tenantMap.isEmpty()) {
             JOptionPane.showMessageDialog(this,
                 "No tenant codes configured. Please configure Portal settings first.",
                 "Configuration Required",
@@ -1462,6 +1481,86 @@ public class TenantCICDDialog extends JDialog {
     }
     
     /**
+     * 处理部署按钮
+     * Handle deployment button
+     */
+    private void handleDeployment() {
+        logger.info("=== User Action: Deployment Button Clicked ===");
+        
+        // 检查连接状态
+        if (currentToken == null || currentToken.isEmpty()) {
+            logger.warn("Deployment attempted without connection");
+            JOptionPane.showMessageDialog(this,
+                "Please connect to a tenant first",
+                "Not Connected",
+                JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        // 获取选中的镜像
+        List<String> selectedImages = getSelectedImagesFromTable();
+        
+        logger.info("Opening Deployment dialog with {} selected images", selectedImages.size());
+        
+        // 打开Deployment对话框
+        try {
+            DeploymentDialog dialog = new DeploymentDialog(
+                (Frame) SwingUtilities.getWindowAncestor(this),
+                apiClient,
+                currentToken,
+                currentTenant,
+                selectedImages
+            );
+            dialog.setVisible(true);
+        } catch (Exception e) {
+            logger.error("Failed to open Deployment dialog", e);
+            JOptionPane.showMessageDialog(this,
+                "Failed to open Deployment dialog:\n" + e.getMessage(),
+                "Error",
+                JOptionPane.ERROR_MESSAGE);
+        }
+    }
+    
+    /**
+     * 从表格中获取选中的镜像名称
+     * Get selected image names from results table (based on checkbox column)
+     * 
+     * @return 镜像名称列表
+     */
+    private List<String> getSelectedImagesFromTable() {
+        // 使用表格模型的 getSelectedImageNames 方法获取选中的镜像
+        List<String> images = tableModel.getSelectedImageNames();
+        
+        logger.info("Extracted {} images from checkbox selection", images.size());
+        
+        if (images.isEmpty()) {
+            logger.debug("No images selected via checkbox, checking for row selection");
+            
+            // 如果没有通过复选框选择，则回退到行选择模式
+            int[] selectedRows = resultsTable.getSelectedRows();
+            logger.debug("Getting images from {} selected rows", selectedRows.length);
+            
+            for (int viewRow : selectedRows) {
+                // 转换为模型行索引
+                int modelRow = resultsTable.convertRowIndexToModel(viewRow);
+                
+                if (modelRow >= 0 && modelRow < tableModel.getResults().size()) {
+                    BuildResult result = tableModel.getResults().get(modelRow);
+                    String imageName = result.getImageName();
+                    
+                    if (imageName != null && !imageName.isEmpty()) {
+                        images.add(imageName);
+                        logger.debug("Added image from row {}: {}", modelRow, imageName);
+                    }
+                }
+            }
+        }
+        
+        logger.info("Total {} images selected for deployment", images.size());
+        return images;
+    }
+    
+    /**
      * 显示加载指示器
      * Show loading indicator
      */
@@ -1491,6 +1590,7 @@ public class TenantCICDDialog extends JDialog {
     private void updateUIState(boolean connected) {
         searchButton.setEnabled(connected);
         buildButton.setEnabled(connected);
+        deployButton.setEnabled(connected);
         downloadCsvButton.setEnabled(false);
         copyImageNamesButton.setEnabled(false);
         
@@ -1498,6 +1598,7 @@ public class TenantCICDDialog extends JDialog {
         downloadCsvButton.setText("<html><font color='white'><b>Download CSV</b></font></html>");
         copyImageNamesButton.setText("<html><font color='white'><b>Copy Image Names</b></font></html>");
         buildButton.setText("<html><font color='white'><b>Build</b></font></html>");
+        deployButton.setText("<html><font color='white'><b>Deployment</b></font></html>");
         searchButton.setText("<html><font color='white'><b>Search</b></font></html>");
         
         if (!connected) {

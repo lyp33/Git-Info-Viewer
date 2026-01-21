@@ -667,3 +667,378 @@ This implementation plan breaks down the Tenant CI/CD feature into discrete, man
 - **Tasks 23-38: Build Package feature implementation (NEW - READY FOR IMPLEMENTATION)**
 - All P0 and P1 issues have been resolved
 - P2 issues (minor improvements) can be addressed in future iterations
+
+
+- [ ] 39. Extend PortalSettingsDialog for Sub-Tenant Codes
+  - [ ] 39.1 Update UI hint text
+    - Update tenant codes field hint to show both formats
+    - Add example: "tenant1,tenant2 or tenant{sub1/sub2},tenant2"
+    - _Requirements: 17.1, 17.2_
+  
+  - [ ] 39.2 Update settings persistence
+    - Store tenant codes as raw string (no parsing in settings)
+    - Load tenant codes from settings as-is
+    - _Requirements: 17.7_
+
+- [ ] 40. Implement Sub-Tenant Code Parsing Utility
+  - [ ] 40.1 Create parseTenantCodesWithSubTenants() method
+    - Parse simple format: "tenant1,tenant2"
+    - Parse with sub-tenants: "tenant{sub1/sub2/sub3}"
+    - Return Map<String, List<String>> (tenant -> sub-tenant codes)
+    - Handle mixed formats in same string
+    - Add comprehensive logging
+    - _Requirements: 17.1, 17.2, 17.3, 17.4, 17.5, 17.6_
+  
+  - [ ] 40.2 Add unit tests for parsing
+    - Test simple format
+    - Test with sub-tenant codes
+    - Test mixed formats
+    - Test edge cases (empty, null, malformed)
+    - _Requirements: 17.1, 17.2, 17.3_
+
+- [ ] 41. Create DeploymentDialog Class Structure
+  - [ ] 41.1 Create DeploymentDialog class
+    - Extend JDialog with modal behavior
+    - Add fields for UI components (imageListTextArea, workspaceComboBox, environmentComboBox, consoleLogArea, buttons)
+    - Add fields for data (apiClient, mainTenantToken, mainTenantCode, workspaceToken, tenantSubTenantMap)
+    - Set up constructor with parameters (parent, apiClient, mainToken, mainTenant, selectedImages)
+    - _Requirements: 18.1, 18.2, 18.3_
+  
+  - [ ] 41.2 Implement initializeUI() method
+    - Create main panel with BorderLayout
+    - Add image list section at top
+    - Add configuration section (workspace, environment) in middle
+    - Add console log section at bottom
+    - Apply modern styling consistent with other dialogs
+    - Set dialog size (700x800) with minimum size (600x700)
+    - Make dialog resizable
+    - _Requirements: 18.4, 18.5, 18.6, 18.7, 18.8, 18.9, 18.10, 26.1, 26.2, 26.3, 26.4, 26.5, 26.6, 26.7, 26.8, 26.9, 26.10_
+
+
+- [ ] 42. Implement Workspace Loading
+  - [ ] 42.1 Create loadWorkspaceList() method
+    - Get Portal Settings tenant codes
+    - Parse tenant codes to extract sub-tenant codes for current main tenant
+    - Populate workspace dropdown with sub-tenant codes
+    - Handle case where no sub-tenant codes configured
+    - Add comprehensive logging
+    - _Requirements: 18.1, 18.2, 19.1, 19.2_
+  
+  - [ ] 42.2 Handle empty workspace list
+    - Display message if no workspaces configured
+    - Disable environment dropdown
+    - Disable deploy button
+    - _Requirements: 19.2_
+
+- [ ] 43. Implement Workspace Token Management
+  - [ ] 43.1 Create handleWorkspaceSelection() method
+    - Get selected workspace from dropdown
+    - Get Portal Settings username and password
+    - Call apiClient.getToken() with workspace as x-mo-tenant-id
+    - Store workspace token separately from main tenant token
+    - Trigger environment list loading on success
+    - Display error message on failure
+    - Add comprehensive logging
+    - _Requirements: 19.3, 19.4, 19.5, 19.6, 19.7_
+  
+  - [ ] 43.2 Implement async token retrieval
+    - Wrap token retrieval in SwingWorker
+    - Disable environment dropdown during loading
+    - Show loading indicator
+    - Enable environment dropdown on success
+    - _Requirements: 19.3, 19.7_
+
+- [ ] 44. Implement Environment List Loading
+  - [ ] 44.1 Create loadEnvironmentList() method
+    - Call apiClient.getTenantConfiguration() with workspace token
+    - Extract deploy_pipeline.pipeline from response
+    - Extract env_name from each pipeline entry
+    - Populate environment dropdown with environment names
+    - Handle empty environment list
+    - Add comprehensive logging
+    - _Requirements: 20.1, 20.2, 20.3, 20.4, 20.5, 20.6, 20.7, 20.8_
+  
+  - [ ] 44.2 Extend TenantConfig data model
+    - Add deployPipeline field
+    - Create DeployPipeline class with pipeline list
+    - Create PipelineEntry class with envName field
+    - Implement null-safe getters
+    - _Requirements: 20.4, 20.5_
+
+
+- [ ] 45. Implement Image Name Parsing
+  - [ ] 45.1 Create extractAppNameFromImage() method
+    - Parse image format: registry/workspace/app:version
+    - Remove version tag if present
+    - Split by forward slash and extract last part
+    - Handle various image formats
+    - Return null for invalid formats
+    - Add comprehensive logging
+    - _Requirements: 21.1, 21.2, 21.3, 21.4, 21.5, 21.6_
+  
+  - [ ] 45.2 Add unit tests for image parsing
+    - Test standard format with registry
+    - Test format without version tag
+    - Test simple format
+    - Test edge cases (empty, null, malformed)
+    - _Requirements: 21.1, 21.2, 21.3, 21.4, 21.5_
+
+- [ ] 46. Implement Deployment Validation
+  - [ ] 46.1 Create validateDeploymentConfiguration() method
+    - Check image list is not empty
+    - Check workspace is selected
+    - Check environment is selected
+    - Check workspace token is available
+    - Show appropriate error message for each validation failure
+    - Return true only if all validations pass
+    - _Requirements: 22.1, 22.2, 22.3_
+  
+  - [ ] 46.2 Create handleDeploy() method
+    - Call validateDeploymentConfiguration()
+    - If validation passes, call showDeploymentConfirmation()
+    - Add comprehensive logging
+    - _Requirements: 22.1, 22.2, 22.3_
+
+- [ ] 47. Implement Deployment Confirmation Dialog
+  - [ ] 47.1 Create showDeploymentConfirmation() method
+    - Get workspace, environment, and image list
+    - Parse and count images
+    - Extract app names for each image
+    - Build confirmation message with all details
+    - Show JOptionPane with OK/CANCEL options
+    - If OK: proceed to executeDeployment()
+    - If CANCEL: return to Deployment dialog
+    - _Requirements: 22.4, 22.5, 22.6, 22.7, 22.8, 22.9, 22.10, 22.11_
+
+
+- [ ] 48. Implement Deployment Execution
+  - [ ] 48.1 Create executeDeployment() method
+    - Parse image list and filter empty lines
+    - Disable deploy button and show "Deploying..." text
+    - Log deployment start with all parameters
+    - Create SwingWorker for async deployment
+    - _Requirements: 23.1, 23.13, 23.14_
+  
+  - [ ] 48.2 Implement sequential deployment in SwingWorker
+    - Loop through images one at a time
+    - For each image: extract app name, log progress, call deployment API
+    - Track success and failure counts
+    - Stop on first failure
+    - Use publish() to send progress messages to console
+    - _Requirements: 23.1, 23.2, 23.7, 23.8, 23.9, 23.10, 23.11_
+  
+  - [ ] 48.3 Handle deployment results in done()
+    - Re-enable deploy button
+    - Display success message if all deployments succeeded
+    - Display error message if any deployment failed
+    - Show success/failure counts
+    - _Requirements: 23.12, 23.13, 23.14_
+
+- [ ] 49. Extend PortalApiClient for Deployment API
+  - [ ] 49.1 Implement deployImage() method
+    - Build URL with query parameters (clear_job=true, silences=true, force=true)
+    - Set headers: x-mo-target-env, x-mo-target-tenant, authorization
+    - Build JSON request body with user_name, app_name, image_name, params
+    - Call POST /api/mo-fo/1.0/ops/v2/deployment
+    - Parse response and check for success code
+    - Throw IOException if deployment fails
+    - Add comprehensive logging (mask token)
+    - _Requirements: 23.2, 23.3, 23.4, 23.5, 23.6_
+  
+  - [ ] 49.2 Add deployment API logging
+    - Log request URL and headers (mask token)
+    - Log request body
+    - Log response status and body
+    - Use appropriate log levels
+    - _Requirements: 16.1, 16.2, 16.10_
+
+
+- [ ] 50. Implement Console Logging
+  - [ ] 50.1 Create console log UI component
+    - Create JTextArea with monospace font (Consolas, 12pt)
+    - Set background to light gray (245, 245, 245)
+    - Make non-editable
+    - Enable line wrap
+    - Add to scroll pane with always-visible scrollbar
+    - Set preferred height to 250px (bottom third of dialog)
+    - _Requirements: 18.11, 24.2, 24.3, 26.6, 26.7_
+  
+  - [ ] 50.2 Create logToConsole() method
+    - Add timestamp to each message
+    - Append message to console log area
+    - Auto-scroll to bottom to show latest entries
+    - Also log to application logger
+    - _Requirements: 24.1, 24.3, 24.10, 24.11_
+  
+  - [ ] 50.3 Implement deployment progress logging
+    - Log deployment start with parameters
+    - Log each image processing (X of Y)
+    - Log app name, workspace, environment for each image
+    - Log API call results (success/failure)
+    - Log deployment completion with counts
+    - Use visual indicators (✓ for success, ✗ for failure)
+    - Add separator lines for readability
+    - _Requirements: 24.3, 24.4, 24.5, 24.6, 24.7, 24.8, 24.9_
+
+- [ ] 51. Implement Deployment Error Handling
+  - [ ] 51.1 Handle workspace token errors
+    - Catch IOException during token retrieval
+    - Display user-friendly error message
+    - Log full error details
+    - Disable environment dropdown
+    - _Requirements: 25.1, 25.6, 25.7, 25.8_
+  
+  - [ ] 51.2 Handle environment loading errors
+    - Catch IOException during tenant config API call
+    - Display error message with failure reason
+    - Log full error details
+    - Keep environment dropdown disabled
+    - _Requirements: 25.2, 25.6, 25.7, 25.8_
+  
+  - [ ] 51.3 Handle image parsing errors
+    - Check if extractAppNameFromImage() returns null
+    - Log warning message
+    - Skip that image and continue with next
+    - _Requirements: 25.3, 25.7_
+  
+  - [ ] 51.4 Handle deployment API errors
+    - Catch IOException during deployment API call
+    - Parse error message from API response
+    - Display error message to user
+    - Log full error details to console and logger
+    - Stop further deployments
+    - _Requirements: 25.4, 25.5, 25.6, 25.7, 25.8_
+
+
+- [ ] 52. Integrate Deployment with TenantCICDDialog
+  - [ ] 52.1 Add Deployment button to UI
+    - Create Deployment button with styled appearance
+    - Add to action button panel
+    - Set enabled state to false initially
+    - Add action listener to call handleDeployment()
+    - _Requirements: 18.1, 18.2_
+  
+  - [ ] 52.2 Implement handleDeployment() method
+    - Check if connected (token not null/empty)
+    - Get selected images from build history table
+    - Create DeploymentDialog with current context
+    - Pass apiClient, currentToken, currentTenant, selectedImages
+    - Show dialog
+    - _Requirements: 18.3_
+  
+  - [ ] 52.3 Create getSelectedImagesFromTable() method
+    - Get selected rows from results table
+    - Convert view row indices to model row indices
+    - Extract image names from BuildResult objects
+    - Return list of image names
+    - Handle case where no rows selected (return empty list)
+    - Add comprehensive logging
+    - _Requirements: 18.3, 18.6, 18.7_
+  
+  - [ ] 52.4 Update connection handler
+    - Enable Deployment button after successful connection
+    - Disable Deployment button on disconnect or error
+    - _Requirements: 18.2_
+
+- [ ] 53. Implement Resource Cleanup for Deployment
+  - [ ] 53.1 Override dispose() in DeploymentDialog
+    - Cancel any running deployment workers
+    - Clear workspace token
+    - Clear main tenant token reference
+    - Clear tenant sub-tenant map
+    - Add comprehensive logging
+    - Call super.dispose()
+    - _Requirements: 15.3, 15.4_
+
+- [ ] 54. Implement Comprehensive Logging for Deployment
+  - [ ] 54.1 Add dialog lifecycle logging
+    - Log dialog open with tenant code
+    - Log workspace list loading
+    - Log workspace selection
+    - Log environment list loading
+    - Log dialog disposal
+    - _Requirements: 16.5_
+  
+  - [ ] 54.2 Add user action logging
+    - Log workspace selection
+    - Log environment selection
+    - Log Deploy button click
+    - Log image count
+    - _Requirements: 16.5_
+  
+  - [ ] 54.3 Add API call logging
+    - Log workspace token API call with URL
+    - Log tenant config API call with URL
+    - Log deployment API call with parameters
+    - Log request bodies (formatted JSON)
+    - Log API responses
+    - Mask sensitive data (tokens, passwords)
+    - _Requirements: 16.1, 16.2, 16.10_
+  
+  - [ ] 54.4 Add error logging
+    - Log all exceptions with stack traces
+    - Log validation failures
+    - Log API errors with context
+    - Use appropriate log levels (INFO, WARN, ERROR)
+    - _Requirements: 16.7, 16.8_
+
+
+- [ ] 55. Testing and Validation for Deployment
+  - [ ] 55.1 Unit tests for sub-tenant code parsing
+    - Test simple format parsing
+    - Test format with sub-tenant codes
+    - Test mixed formats
+    - Test edge cases (empty, null, malformed)
+    - _Requirements: 17.1, 17.2, 17.3_
+  
+  - [ ] 55.2 Unit tests for image name parsing
+    - Test standard format with registry
+    - Test format without version tag
+    - Test simple format
+    - Test edge cases (empty, null, malformed)
+    - _Requirements: 21.1, 21.2, 21.3, 21.4, 21.5_
+  
+  - [ ] 55.3 Unit tests for deployment validation
+    - Test with missing image list
+    - Test with missing workspace
+    - Test with missing environment
+    - Test with missing token
+    - Test with valid configuration
+    - _Requirements: 22.1, 22.2, 22.3_
+  
+  - [ ] 55.4 Manual testing
+    - Test Deployment button enabled/disabled state
+    - Test dialog opens with pre-selected images
+    - Test dialog opens with empty image list
+    - Test workspace list loads correctly
+    - Test workspace token retrieval
+    - Test environment list loads correctly
+    - Test image list textarea is editable
+    - Test validation with invalid inputs
+    - Test confirmation dialog
+    - Test successful single image deployment
+    - Test successful multiple image deployment
+    - Test deployment failure handling
+    - Test console log displays all steps
+    - Test main tenant token remains unchanged
+    - Test error handling for all scenarios
+    - _Requirements: All deployment requirements_
+  
+  - [ ] 55.5 Integration testing
+    - Test complete flow from Deployment button to completion
+    - Test with different tenants and workspaces
+    - Test with various image formats
+    - Test error scenarios (network failure, auth failure, API errors)
+    - Test resource cleanup on dialog close
+    - _Requirements: All deployment requirements_
+
+- [ ] 56. Checkpoint - Ensure deployment functionality works
+  - Ensure all deployment tests pass, ask the user if questions arise.
+
+## Updated Notes
+
+- Tasks 1-22: Core implementation (COMPLETED ✅)
+- Tasks 23-38: Build Package feature implementation (COMPLETED ✅)
+- **Tasks 39-56: Deployment feature implementation (NEW - READY FOR IMPLEMENTATION)**
+- All P0 and P1 issues have been resolved
+- P2 issues (minor improvements) can be addressed in future iterations

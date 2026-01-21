@@ -4561,3 +4561,29 @@ response:
     ],
     "total": 760
 }
+
+
+## deployment api  	
+https://portal.insuremo.com/api/mo-fo/1.0/ops/v2/deployment?clear_job=true&silences=true&force=true
+
+header: 
+x-mo-target-env: {imo_kic_gemini_sp3}           //env name 
+x-mo-target-tenant: {thailifedev}                   //sub tenant code
+authorization : Bearer {5f4q2OjFQbSH2gOvJzLjmw}   //get token by sub tenant code 
+
+request:
+{
+  "user_name":"{thailifedev}",  //sub tenant code
+  "app_name":"{thailife-bs}",     //app name 
+  "image_name":"{docker-all.repo.ebaotech.com/thailifedev/thailife-bs:24.08.22}",  //image name  
+  "params":null
+}
+
+response:
+{
+"code": "i_common_success",
+"message": "request success",
+"trace_id": "2c170bcdfd953da29c646fa638de4342",
+"env_name": "aws_sg_insuremo_portal",
+"date": "2026-01-21T04:32:14.787Z"
+}

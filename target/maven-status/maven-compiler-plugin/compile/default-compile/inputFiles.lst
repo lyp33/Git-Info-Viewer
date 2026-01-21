@@ -2,6 +2,8 @@ D:\ai\project\git\src\main\java\com\gitviewer\BuildResult.java
 D:\ai\project\git\src\main\java\com\gitviewer\FileDiffDialog.java
 D:\ai\project\git\src\main\java\com\gitviewer\FavoritesPanel.java
 D:\ai\project\git\src\main\java\com\gitviewer\BuildResultTableModel.java
+D:\ai\project\git\src\main\java\com\gitviewer\DeploymentDialog.java
+D:\ai\project\git\src\main\java\com\gitviewer\DeploymentPodListDialog.java
 D:\ai\project\git\src\main\java\com\gitviewer\PlanBuildResult.java
 D:\ai\project\git\src\main\java\com\gitviewer\AISettingsDialog.java
 D:\ai\project\git\src\main\java\com\gitviewer\Application.java
@@ -12,6 +14,7 @@ D:\ai\project\git\src\main\java\com\gitviewer\JenkinsApiClient.java
 D:\ai\project\git\src\main\java\com\gitviewer\PasswordEncryption.java
 D:\ai\project\git\src\main\java\com\gitviewer\BatchCherryPickDialog.java
 D:\ai\project\git\src\main\java\com\gitviewer\GitHubApiClient.java
+D:\ai\project\git\src\main\java\com\gitviewer\DeploymentPodLogDialog.java
 D:\ai\project\git\src\main\java\com\gitviewer\GitApiClient.java
 D:\ai\project\git\src\main\java\com\gitviewer\FileSearchDialog.java
 D:\ai\project\git\src\main\java\com\gitviewer\GitLabSettingsDialog.java
@@ -44,6 +47,7 @@ D:\ai\project\git\src\main\java\com\gitviewer\JenkinsStageViewPanel.java
 D:\ai\project\git\src\main\java\com\gitviewer\RepoDetailsDialog.java
 D:\ai\project\git\src\main\java\com\gitviewer\AppSettings.java
 D:\ai\project\git\src\main\java\com\gitviewer\TokenResponse.java
+D:\ai\project\git\src\main\java\com\gitviewer\DeploymentPod.java
 D:\ai\project\git\src\main\java\com\gitviewer\JenkinsBuild.java
 D:\ai\project\git\src\main\java\com\gitviewer\GitLabApiClient.java
 D:\ai\project\git\src\main\java\com\gitviewer\BuildStatusCellRenderer.java

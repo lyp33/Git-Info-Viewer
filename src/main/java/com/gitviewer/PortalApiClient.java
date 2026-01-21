@@ -973,6 +973,112 @@ public class PortalApiClient {
     }
     
     /**
+     * 获取环境列表
+     * Get environment list using new API
+     * 
+     * @param workspaceToken 工作空间Token
+     * @return 环境名称列表
+     * @throws IOException 网络错误或API错误
+     */
+    public List<String> getEnvironments(String workspaceToken) throws IOException {
+        logger.info("=== Getting Environments ===");
+        
+        // 构建URL
+        String url = BASE_URL + "/api/mo-fo/1.0/ops/env?status=&all=false";
+        
+        // 构建请求头
+        Map<String, String> headers = new HashMap<>();
+        headers.put("authorization", "Bearer " + workspaceToken);
+        headers.put("Content-Type", "application/json");
+        
+        // 发送GET请求
+        String response = sendGetRequest(url, headers);
+        
+        // 解析响应
+        List<String> environments = new ArrayList<>();
+        try {
+            JSONArray jsonArray = new JSONArray(response);
+            
+            for (int i = 0; i < jsonArray.length(); i++) {
+                JSONObject envObj = jsonArray.getJSONObject(i);
+                String envName = envObj.optString("env_name", "");
+                
+                if (!envName.isEmpty()) {
+                    environments.add(envName);
+                    logger.debug("Found environment: {}", envName);
+                }
+            }
+            
+            logger.info("Loaded {} environments", environments.size());
+            
+        } catch (Exception e) {
+            logger.error("Failed to parse environments response", e);
+            throw new IOException("Failed to parse environments: " + e.getMessage(), e);
+        }
+        
+        return environments;
+    }
+    
+    /**
+     * 部署镜像到指定环境
+     * Deploy image to specified environment
+     * 
+     * @param workspace 工作空间（子租户代码）
+     * @param environment 环境名称
+     * @param workspaceToken 工作空间Token
+     * @param imageName 镜像名称
+     * @param appName 应用名称
+     * @return 部署响应消息
+     * @throws IOException 网络错误或API错误
+     */
+    public String deployImage(String workspace, String environment, String workspaceToken, 
+                             String imageName, String appName) throws IOException {
+        logger.info("=== Deploying Image ===");
+        logger.info("Workspace: {}, Environment: {}, AppName: {}, ImageName: {}", 
+                   workspace, environment, appName, imageName);
+        
+        // 构建URL with query parameters
+        String url = BASE_URL + "/api/mo-fo/1.0/ops/v2/deployment?clear_job=true&silences=true&force=true";
+        
+        // 构建请求头
+        Map<String, String> headers = new HashMap<>();
+        headers.put("x-mo-target-env", environment);
+        headers.put("x-mo-target-tenant", workspace);
+        headers.put("authorization", "Bearer " + workspaceToken);
+        headers.put("Content-Type", "application/json");
+        
+        // 构建请求体
+        JSONObject requestBody = new JSONObject();
+        requestBody.put("user_name", workspace);
+        requestBody.put("app_name", appName);
+        requestBody.put("image_name", imageName);
+        requestBody.put("params", JSONObject.NULL);
+        
+        String jsonBody = requestBody.toString();
+        
+        // 发送请求
+        String response = sendPostRequest(url, headers, jsonBody);
+        
+        // 解析响应检查是否成功
+        try {
+            JSONObject responseJson = new JSONObject(response);
+            String code = responseJson.optString("code", "");
+            String message = responseJson.optString("message", "");
+            
+            if ("i_common_success".equals(code)) {
+                logger.info("Deployment successful: {}", message);
+                return message;
+            } else {
+                logger.error("Deployment failed with code: {}, message: {}", code, message);
+                throw new IOException("Deployment failed: " + message);
+            }
+        } catch (Exception e) {
+            logger.error("Failed to parse deployment response", e);
+            throw new IOException("Failed to parse deployment response: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
      * 解析租户配置响应
      * Parse tenant configuration response
      * 
@@ -1003,11 +1109,178 @@ public class PortalApiClient {
             } else {
                 logger.warn("No branch_list found in response");
             }
+            
+            // 解析部署管道配置
+            JSONObject deployPipelineJson = json.optJSONObject("deploy_pipeline");
+            if (deployPipelineJson != null) {
+                TenantConfig.DeployPipeline deployPipeline = new TenantConfig.DeployPipeline();
+                
+                JSONArray pipelineArray = deployPipelineJson.optJSONArray("pipeline");
+                if (pipelineArray != null) {
+                    List<TenantConfig.PipelineEntry> pipelineEntries = new ArrayList<>();
+                    for (int i = 0; i < pipelineArray.length(); i++) {
+                        JSONObject entryJson = pipelineArray.getJSONObject(i);
+                        TenantConfig.PipelineEntry entry = new TenantConfig.PipelineEntry();
+                        entry.setEnvName(entryJson.optString("env_name", ""));
+                        pipelineEntries.add(entry);
+                    }
+                    deployPipeline.setPipeline(pipelineEntries);
+                    logger.info("Loaded {} pipeline entries for tenant {}", pipelineEntries.size(), config.getUserName());
+                }
+                
+                config.setDeployPipeline(deployPipeline);
+            } else {
+                logger.debug("No deploy_pipeline found in response");
+            }
         } catch (Exception e) {
             logger.error("Failed to parse tenant configuration response", e);
             throw new RuntimeException("Failed to parse tenant configuration: " + e.getMessage(), e);
         }
         
         return config;
+    }
+
+    
+    /**
+     * 查询部署Pod列表
+     * Query deployment pod list
+     * 
+     * @param workspace 工作空间（子租户代码）
+     * @param environment 环境名称
+     * @param workspaceToken 工作空间Token
+     * @param appName 应用名称（可选，为空则查询所有）
+     * @return Pod列表
+     * @throws IOException 网络错误或API错误
+     */
+    public List<DeploymentPod> getDeploymentPods(String workspace, String environment, String workspaceToken, String appName) throws IOException {
+        logger.info("=== Getting Deployment Pods ===");
+        logger.info("Workspace: {}, Environment: {}, AppName: {}", workspace, environment, appName);
+        
+        String url = BASE_URL + "/api/mo-fo/1.0/ops/pod";
+        if (appName != null && !appName.trim().isEmpty()) {
+            url += "?app_name=" + appName;
+        }
+        
+        // 构建请求头
+        Map<String, String> headers = new HashMap<>();
+        headers.put("x-mo-target-env", environment);
+        headers.put("x-mo-target-tenant", workspace);
+        headers.put("authorization", "Bearer " + workspaceToken);
+        headers.put("Accept", "application/json");
+        
+        // 发送请求
+        String response = sendGetRequest(url, headers);
+        
+        // 解析响应
+        return parseDeploymentPods(response);
+    }
+    
+    /**
+     * 查询Pod日志
+     * Query pod logs
+     * 
+     * @param workspace 工作空间（子租户代码）
+     * @param environment 环境名称
+     * @param workspaceToken 工作空间Token
+     * @param podName Pod名称
+     * @param appName 应用名称
+     * @return 日志内容
+     * @throws IOException 网络错误或API错误
+     */
+    public String getDeploymentPodLogs(String workspace, String environment, String workspaceToken, String podName, String appName) throws IOException {
+        logger.info("=== Getting Deployment Pod Logs ===");
+        logger.info("Workspace: {}, Environment: {}, PodName: {}, AppName: {}", workspace, environment, podName, appName);
+        
+        String url = BASE_URL + "/api/mo-fo/1.0/ops/pod_logs?pod_name=" + podName + "&app_name=" + appName + "&previous=false";
+        
+        // 构建请求头
+        Map<String, String> headers = new HashMap<>();
+        headers.put("x-mo-target-env", environment);
+        headers.put("x-mo-target-tenant", workspace);
+        headers.put("authorization", "Bearer " + workspaceToken);
+        headers.put("Accept", "application/json");
+        
+        // 发送请求
+        String response = sendGetRequest(url, headers);
+        
+        // 解析响应
+        return parsePodLogs(response);
+    }
+    
+    /**
+     * 解析部署Pod列表响应
+     * Parse deployment pods response
+     * 
+     * @param response JSON响应字符串
+     * @return Pod列表
+     */
+    private List<DeploymentPod> parseDeploymentPods(String response) {
+        List<DeploymentPod> pods = new ArrayList<>();
+        
+        try {
+            JSONObject json = new JSONObject(response);
+            JSONArray items = json.optJSONArray("items");
+            
+            if (items != null) {
+                for (int i = 0; i < items.length(); i++) {
+                    JSONObject item = items.getJSONObject(i);
+                    JSONObject metadata = item.optJSONObject("metadata");
+                    
+                    if (metadata != null) {
+                        DeploymentPod pod = new DeploymentPod();
+                        
+                        // 提取基本信息
+                        pod.setName(metadata.optString("name", ""));
+                        pod.setNamespace(metadata.optString("namespace", ""));
+                        pod.setCreationTimestamp(metadata.optString("creationTimestamp", ""));
+                        
+                        // 提取annotations
+                        JSONObject annotations = metadata.optJSONObject("annotations");
+                        if (annotations != null) {
+                            pod.setApp(annotations.optString("app", ""));
+                            pod.setRealStatus(annotations.optString("real_status", ""));
+                        }
+                        
+                        pods.add(pod);
+                        logger.debug("Parsed pod: {}", pod.getName());
+                    }
+                }
+                
+                logger.info("Parsed {} pods from response", pods.size());
+            } else {
+                logger.warn("No items array found in response");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to parse deployment pods response", e);
+        }
+        
+        return pods;
+    }
+    
+    /**
+     * 解析Pod日志响应
+     * Parse pod logs response
+     * 
+     * @param response JSON响应字符串
+     * @return 日志内容
+     */
+    private String parsePodLogs(String response) {
+        try {
+            JSONObject json = new JSONObject(response);
+            String data = json.optString("data", "");
+            String status = json.optString("status", "");
+            
+            logger.info("Pod logs status: {}, data length: {}", status, data.length());
+            
+            if ("SUCCESS".equals(status)) {
+                return data;
+            } else {
+                logger.warn("Pod logs query returned non-SUCCESS status: {}", status);
+                return "Failed to retrieve logs. Status: " + status;
+            }
+        } catch (Exception e) {
+            logger.error("Failed to parse pod logs response", e);
+            return "Error parsing logs: " + e.getMessage();
+        }
     }
 }

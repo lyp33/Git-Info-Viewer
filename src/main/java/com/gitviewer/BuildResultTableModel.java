@@ -10,15 +10,17 @@ import java.util.List;
  */
 public class BuildResultTableModel extends AbstractTableModel {
     private List<BuildResult> results;
-    private String[] columnNames = {"App Name", "Image Name", "Build Status", 
+    private List<Boolean> selectedRows;  // 复选框状态
+    private String[] columnNames = {"Select", "App Name", "Image Name", "Build Status", 
                                      "Create Time", "Version", "Git Branch"};
-    private int[] columnWidths = {150, 400, 120, 180, 150, 100};  // 首选列宽
+    private int[] columnWidths = {60, 150, 400, 120, 180, 150, 100};  // 首选列宽
     
     /**
      * 构造函数
      */
     public BuildResultTableModel() {
         this.results = new ArrayList<>();
+        this.selectedRows = new ArrayList<>();
     }
     
     /**
@@ -29,6 +31,13 @@ public class BuildResultTableModel extends AbstractTableModel {
      */
     public void setResults(List<BuildResult> results) {
         this.results = results != null ? new ArrayList<>(results) : new ArrayList<>();
+        
+        // 初始化复选框状态（全部未选中）
+        this.selectedRows = new ArrayList<>();
+        for (int i = 0; i < this.results.size(); i++) {
+            this.selectedRows.add(false);
+        }
+        
         fireTableDataChanged();
     }
     
@@ -40,6 +49,41 @@ public class BuildResultTableModel extends AbstractTableModel {
      */
     public List<BuildResult> getResults() {
         return new ArrayList<>(results);
+    }
+    
+    /**
+     * 获取选中的构建结果
+     * Get selected build results
+     * 
+     * @return 选中的构建结果列表
+     */
+    public List<BuildResult> getSelectedResults() {
+        List<BuildResult> selected = new ArrayList<>();
+        for (int i = 0; i < results.size() && i < selectedRows.size(); i++) {
+            if (selectedRows.get(i)) {
+                selected.add(results.get(i));
+            }
+        }
+        return selected;
+    }
+    
+    /**
+     * 获取选中行的镜像名称列表
+     * Get image names of selected rows
+     * 
+     * @return 镜像名称列表
+     */
+    public List<String> getSelectedImageNames() {
+        List<String> imageNames = new ArrayList<>();
+        for (int i = 0; i < results.size() && i < selectedRows.size(); i++) {
+            if (selectedRows.get(i)) {
+                String imageName = results.get(i).getImageName();
+                if (imageName != null && !imageName.trim().isEmpty()) {
+                    imageNames.add(imageName);
+                }
+            }
+        }
+        return imageNames;
     }
     
     /**
@@ -72,16 +116,19 @@ public class BuildResultTableModel extends AbstractTableModel {
         
         switch (column) {
             case 0:
-                return result.getAppName();
+                // 复选框列
+                return row < selectedRows.size() ? selectedRows.get(row) : false;
             case 1:
-                return result.getImageName();
+                return result.getAppName();
             case 2:
-                return result.getBuildStatus();
+                return result.getImageName();
             case 3:
-                return result.getFormattedCreateTime();
+                return result.getBuildStatus();
             case 4:
-                return result.getVersion();
+                return result.getFormattedCreateTime();
             case 5:
+                return result.getVersion();
+            case 6:
                 return result.getGitBranch();
             default:
                 return "";
@@ -98,13 +145,25 @@ public class BuildResultTableModel extends AbstractTableModel {
     
     @Override
     public Class<?> getColumnClass(int column) {
-        // 所有列都是字符串类型，用于正确的排序
+        if (column == 0) {
+            // 第一列是复选框
+            return Boolean.class;
+        }
+        // 其他列都是字符串类型
         return String.class;
     }
     
     @Override
     public boolean isCellEditable(int row, int column) {
-        // 所有单元格都不可编辑
-        return false;
+        // 只有复选框列可编辑
+        return column == 0;
+    }
+    
+    @Override
+    public void setValueAt(Object value, int row, int column) {
+        if (column == 0 && row >= 0 && row < selectedRows.size()) {
+            selectedRows.set(row, (Boolean) value);
+            fireTableCellUpdated(row, column);
+        }
     }
 }

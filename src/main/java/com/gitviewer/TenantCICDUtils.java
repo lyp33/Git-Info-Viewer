@@ -164,4 +164,133 @@ public class TenantCICDUtils {
             return defaultValue;
         }
     }
+    
+    /**
+     * 解析带有子租户代码的租户代码字符串
+     * Parse tenant codes with sub-tenant codes (workspaces)
+     * 
+     * Supports two formats:
+     * 1. Simple format: "tenant1,tenant2,tenant3"
+     * 2. With sub-tenants: "tenant{sub1/sub2/sub3},tenant2"
+     * 3. Mixed format: "tenant1{sub1/sub2},tenant2,tenant3{sub3/sub4}"
+     * 
+     * Examples:
+     * - "stbd,thailife" -> {"stbd": [], "thailife": []}
+     * - "stbd{stbddev/stbdtst}" -> {"stbd": ["stbddev", "stbdtst"]}
+     * - "stbd{stbddev/stbdtst},thailife{thailifedev/thailifetest}" -> 
+     *   {"stbd": ["stbddev", "stbdtst"], "thailife": ["thailifedev", "thailifetest"]}
+     * 
+     * @param tenantCodesStr 租户代码字符串
+     * @return Map<String, List<String>> - 租户代码 -> 子租户代码列表
+     */
+    public static java.util.Map<String, List<String>> parseTenantCodesWithSubTenants(String tenantCodesStr) {
+        java.util.Map<String, List<String>> result = new java.util.HashMap<>();
+        
+        if (tenantCodesStr == null || tenantCodesStr.trim().isEmpty()) {
+            logger.debug("parseTenantCodesWithSubTenants: Input is null or empty");
+            return result;
+        }
+        
+        logger.info("parseTenantCodesWithSubTenants: Parsing tenant codes: {}", tenantCodesStr);
+        
+        // 按逗号分割
+        String[] tenantParts = tenantCodesStr.split(",");
+        
+        for (String tenantPart : tenantParts) {
+            tenantPart = tenantPart.trim();
+            
+            if (tenantPart.isEmpty()) {
+                continue;
+            }
+            
+            // 检查是否包含子租户代码（格式：tenant{sub1/sub2}）
+            if (tenantPart.contains("{") && tenantPart.contains("}")) {
+                int braceStart = tenantPart.indexOf("{");
+                int braceEnd = tenantPart.indexOf("}");
+                
+                if (braceStart < braceEnd) {
+                    // 提取租户代码
+                    String tenantCode = tenantPart.substring(0, braceStart).trim();
+                    
+                    // 提取子租户代码
+                    String subTenantsStr = tenantPart.substring(braceStart + 1, braceEnd).trim();
+                    
+                    // 按斜杠分割子租户代码
+                    String[] subTenants = subTenantsStr.split("/");
+                    List<String> subTenantList = new ArrayList<>();
+                    
+                    for (String subTenant : subTenants) {
+                        subTenant = subTenant.trim();
+                        if (!subTenant.isEmpty()) {
+                            subTenantList.add(subTenant);
+                        }
+                    }
+                    
+                    result.put(tenantCode, subTenantList);
+                    logger.info("parseTenantCodesWithSubTenants: Parsed tenant '{}' with {} sub-tenants: {}", 
+                               tenantCode, subTenantList.size(), subTenantList);
+                } else {
+                    // 格式错误，作为简单租户代码处理
+                    logger.warn("parseTenantCodesWithSubTenants: Malformed tenant code '{}', treating as simple tenant", tenantPart);
+                    result.put(tenantPart, new ArrayList<>());
+                }
+            } else {
+                // 简单格式，没有子租户代码
+                result.put(tenantPart, new ArrayList<>());
+                logger.info("parseTenantCodesWithSubTenants: Parsed simple tenant '{}'", tenantPart);
+            }
+        }
+        
+        logger.info("parseTenantCodesWithSubTenants: Parsed {} tenants total", result.size());
+        return result;
+    }
+    
+    /**
+     * 从镜像名称中提取应用名称
+     * Extract app name from image name
+     * 
+     * Supports formats:
+     * - "docker-all.repo.ebaotech.com/thailifedev/thailife-bs:24.08.22" -> "thailife-bs"
+     * - "registry/workspace/app:version" -> "app"
+     * - "workspace/app:version" -> "app"
+     * - "app:version" -> "app"
+     * - "app" -> "app"
+     * 
+     * @param imageName 镜像名称
+     * @return 应用名称，如果解析失败则返回null
+     */
+    public static String extractAppNameFromImage(String imageName) {
+        if (imageName == null || imageName.trim().isEmpty()) {
+            logger.debug("extractAppNameFromImage: imageName is null or empty");
+            return null;
+        }
+        
+        String trimmed = imageName.trim();
+        logger.debug("extractAppNameFromImage: Parsing image name: {}", trimmed);
+        
+        try {
+            // 移除版本标签（如果存在）
+            String withoutVersion = trimmed;
+            if (trimmed.contains(":")) {
+                withoutVersion = trimmed.substring(0, trimmed.lastIndexOf(":"));
+                logger.debug("extractAppNameFromImage: Removed version tag, result: {}", withoutVersion);
+            }
+            
+            // 按斜杠分割，取最后一部分
+            String[] parts = withoutVersion.split("/");
+            String appName = parts[parts.length - 1];
+            
+            if (appName.isEmpty()) {
+                logger.warn("extractAppNameFromImage: Extracted app name is empty for image: {}", imageName);
+                return null;
+            }
+            
+            logger.info("extractAppNameFromImage: Extracted app name '{}' from image '{}'", appName, imageName);
+            return appName;
+            
+        } catch (Exception e) {
+            logger.error("extractAppNameFromImage: Failed to parse image name: {}", imageName, e);
+            return null;
+        }
+    }
 }

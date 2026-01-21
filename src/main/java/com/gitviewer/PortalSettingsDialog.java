@@ -77,7 +77,8 @@ public class PortalSettingsDialog extends JDialog {
         // 说明文本
         JTextArea descriptionArea = new JTextArea(
             "Configure your Portal credentials and tenant codes. " +
-            "Multiple tenant codes can be separated by commas."
+            "Multiple tenant codes can be separated by commas. " +
+            "Use format tenant{sub1/sub2} to specify sub-tenant codes (workspaces)."
         );
         descriptionArea.setEditable(false);
         descriptionArea.setWrapStyleWord(true);
@@ -85,7 +86,7 @@ public class PortalSettingsDialog extends JDialog {
         descriptionArea.setBackground(new Color(240, 248, 255));
         descriptionArea.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         descriptionArea.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        descriptionArea.setMaximumSize(new Dimension(550, 50));
+        descriptionArea.setMaximumSize(new Dimension(550, 60));
         descriptionArea.setAlignmentX(Component.CENTER_ALIGNMENT);
         mainPanel.add(descriptionArea);
         mainPanel.add(Box.createVerticalStrut(20));
@@ -147,8 +148,17 @@ public class PortalSettingsDialog extends JDialog {
         tenantCodesField = new JTextField();
         tenantCodesField.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         tenantCodesField.setPreferredSize(new Dimension(400, 28));
-        tenantCodesField.setToolTipText("Enter tenant codes (comma-separated, e.g., thailife,tenant2)");
+        tenantCodesField.setToolTipText("Enter tenant codes (comma-separated, e.g., thailife,tenant2 or tenant{sub1/sub2},tenant2)");
         formPanel.add(tenantCodesField, gbc);
+        
+        // Tenant Codes 提示文本
+        gbc.gridx = 1;
+        gbc.gridy = 3;
+        gbc.anchor = GridBagConstraints.WEST;
+        JLabel tenantCodesHint = new JLabel("<html><i>Format: tenant1,tenant2 or tenant{sub1/sub2},tenant2</i></html>");
+        tenantCodesHint.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+        tenantCodesHint.setForeground(Color.GRAY);
+        formPanel.add(tenantCodesHint, gbc);
         
         mainPanel.add(formPanel);
         mainPanel.add(Box.createVerticalStrut(20));
