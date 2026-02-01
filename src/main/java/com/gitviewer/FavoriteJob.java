@@ -8,12 +8,13 @@ import java.util.Objects;
  * 用于存储用户收藏的 Jenkins Job 信息
  */
 public class FavoriteJob implements Serializable {
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 2L;  // 增加版本号，因为添加了新字段
     
     private String jobPath;        // 完整路径: "gemini/job/Manual-Build/..."
     private String displayName;    // 显示名称: "all-in-one-auto-CI"
     private String jobUrl;         // Jenkins URL
     private int order;             // 排序顺序
+    private String alias;          // 用户自定义别名
     
     public FavoriteJob() {
     }
@@ -55,6 +56,14 @@ public class FavoriteJob implements Serializable {
     
     public void setOrder(int order) {
         this.order = order;
+    }
+    
+    public String getAlias() {
+        return alias;
+    }
+    
+    public void setAlias(String alias) {
+        this.alias = alias;
     }
     
     @Override

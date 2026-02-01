@@ -116,6 +116,10 @@ public class DeploymentPodListDialog extends JDialog {
             column.setPreferredWidth(widths[i]);
         }
         
+        // 为Status列（第4列）设置自定义渲染器，根据状态显示不同背景色
+        TableColumn statusColumn = podTable.getColumnModel().getColumn(4);
+        statusColumn.setCellRenderer(new StatusCellRenderer());
+        
         // 为Image列（第5列）设置自定义渲染器，支持换行显示
         TableColumn imageColumn = podTable.getColumnModel().getColumn(5);
         imageColumn.setCellRenderer(new MultiLineTableCellRenderer());
@@ -292,6 +296,21 @@ public class DeploymentPodListDialog extends JDialog {
         
         public void setPods(List<DeploymentPod> pods) {
             this.pods = pods != null ? new ArrayList<>(pods) : new ArrayList<>();
+            
+            // 按 Creation Time 倒序排列（最新的在前面）
+            this.pods.sort((p1, p2) -> {
+                String time1 = p1.getCreationTimestamp();
+                String time2 = p2.getCreationTimestamp();
+                
+                // 处理 null 值
+                if (time1 == null && time2 == null) return 0;
+                if (time1 == null) return 1;
+                if (time2 == null) return -1;
+                
+                // 倒序排列：time2 与 time1 比较
+                return time2.compareTo(time1);
+            });
+            
             fireTableDataChanged();
         }
         
@@ -341,6 +360,46 @@ public class DeploymentPodListDialog extends JDialog {
                 default:
                     return "";
             }
+        }
+    }
+    
+    /**
+     * Status列单元格渲染器
+     * Status column cell renderer with colored background
+     */
+    private static class StatusCellRenderer extends javax.swing.table.DefaultTableCellRenderer {
+        
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                                                      boolean isSelected, boolean hasFocus,
+                                                      int row, int column) {
+            Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+            
+            if (!isSelected) {
+                String status = value != null ? value.toString().toLowerCase() : "";
+                
+                // 根据状态设置背景色
+                if (status.contains("succeed") || status.contains("running")) {
+                    // 成功状态 - 淡绿色背景
+                    c.setBackground(new Color(200, 255, 200));
+                } else if (status.contains("fail") || status.contains("error")) {
+                    // 失败状态 - 淡黄色背景
+                    c.setBackground(new Color(255, 255, 200));
+                } else {
+                    // 其他状态 - 白色背景
+                    c.setBackground(Color.WHITE);
+                }
+                c.setForeground(Color.BLACK);
+            } else {
+                // 选中状态保持原有样式
+                c.setBackground(new Color(66, 133, 244, 50));
+                c.setForeground(Color.BLACK);
+            }
+            
+            setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5));
+            
+            return c;
         }
     }
     

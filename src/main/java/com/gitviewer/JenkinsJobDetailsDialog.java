@@ -63,6 +63,29 @@ public class JenkinsJobDetailsDialog extends JDialog {
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         buttonPanel.setBackground(Color.WHITE);
         
+        // Tenant CI/CD 超链接
+        JLabel tenantCicdLink = new JLabel("<html><u>Tenant CI/CD</u></html>");
+        tenantCicdLink.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        tenantCicdLink.setForeground(new Color(66, 133, 244));  // 蓝色链接
+        tenantCicdLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        tenantCicdLink.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                openTenantCICD();
+            }
+            
+            @Override
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                tenantCicdLink.setForeground(new Color(25, 103, 210));  // 深蓝色
+            }
+            
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                tenantCicdLink.setForeground(new Color(66, 133, 244));  // 恢复蓝色
+            }
+        });
+        buttonPanel.add(tenantCicdLink);
+        
         buildButton = new JButton("<html><font color='white'><b>Build with Parameters</b></font></html>");
         buildButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         buildButton.setPreferredSize(new Dimension(180, 35));
@@ -397,7 +420,9 @@ public class JenkinsJobDetailsDialog extends JDialog {
                         (Frame) getOwner(), apiClient, jobPath, jobName, parameters);
                     dialog.setVisible(true);
                     
-                    logToConsole("Build dialog closed. Click Refresh to update build history.");
+                    logToConsole("Build dialog closed. Refreshing build history...");
+                    // 自动刷新构建历史
+                    loadBuildHistory();
                 } catch (Exception e) {
                     logToConsole("ERROR: Failed to fetch latest build parameters: " + e.getMessage());
                     
@@ -405,7 +430,9 @@ public class JenkinsJobDetailsDialog extends JDialog {
                         (Frame) getOwner(), apiClient, jobPath, jobName, null);
                     dialog.setVisible(true);
                     
-                    logToConsole("Build dialog closed. Click Refresh to update build history.");
+                    logToConsole("Build dialog closed. Refreshing build history...");
+                    // 自动刷新构建历史
+                    loadBuildHistory();
                 }
             }
         };
@@ -527,11 +554,11 @@ public class JenkinsJobDetailsDialog extends JDialog {
                 
                 if (!isSelected) {
                     if (build.isSuccess()) {
-                        setForeground(new Color(0, 128, 0));
+                        setForeground(new Color(0, 128, 0));  // 绿色
                     } else if (build.isFailure()) {
-                        setForeground(new Color(255, 0, 0));
+                        setForeground(new Color(255, 0, 0));  // 红色
                     } else if (build.isInProgress()) {
-                        setForeground(new Color(0, 0, 255));
+                        setForeground(new Color(255, 0, 0));  // 红色 - IN_PROGRESS 状态
                     }
                 }
                 
@@ -586,5 +613,34 @@ public class JenkinsJobDetailsDialog extends JDialog {
             SimpleDateFormat sdf = new SimpleDateFormat("MMM dd, yyyy HH:mm");
             return sdf.format(new Date(timestamp));
         }
+    }
+    
+    /**
+     * 打开 Tenant CI/CD 对话框
+     * 不关闭任何窗口，只是打开新对话框
+     */
+    private void openTenantCICD() {
+        // 获取父窗口
+        Window owner = getOwner();
+        Frame parentFrame = null;
+        
+        if (owner instanceof Frame) {
+            parentFrame = (Frame) owner;
+        } else if (owner != null) {
+            // 如果 owner 不是 Frame，尝试获取其父窗口
+            Window parentWindow = SwingUtilities.getWindowAncestor(owner);
+            if (parentWindow instanceof Frame) {
+                parentFrame = (Frame) parentWindow;
+            }
+        }
+        
+        // 如果找不到 Frame，使用 null
+        if (parentFrame == null) {
+            parentFrame = (Frame) SwingUtilities.getWindowAncestor(this);
+        }
+        
+        // 打开 Tenant CI/CD 对话框（不关闭任何窗口）
+        TenantCICDDialog dialog = new TenantCICDDialog(parentFrame);
+        dialog.setVisible(true);
     }
 }

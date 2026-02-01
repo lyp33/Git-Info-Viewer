@@ -4580,10 +4580,66 @@ request:
 }
 
 response:
-{
+{          
 "code": "i_common_success",
 "message": "request success",
 "trace_id": "2c170bcdfd953da29c646fa638de4342",
 "env_name": "aws_sg_insuremo_portal",
 "date": "2026-01-21T04:32:14.787Z"
+}
+
+
+## deployment pod query
+https://portal.insuremo.com/api/mo-fo/1.0/ops/pod?app_name=
+
+x-mo-target-env： {imo_kic_insuremo_ptdev}   //environment
+x-mo-target-tenant： {stbdcr}      //workspace
+authorization： Bearer {0zCgOiBvTzy3D9CznbxaMg}    //temp token based on workspace
+
+response: 
+{
+    "metadata": {
+        "resourceVersion": "127874303"
+    },
+    "items": [
+        {
+            "metadata": {
+                "name": "boot-admin-55d697fbb5-qkhr4",
+                "generateName": "boot-admin-55d697fbb5-",
+                "namespace": "stbdcr",
+                "uid": "e7c3c502-64eb-4447-b4b1-580734b1a53c",
+                "resourceVersion": "7671370",
+                "generation": 1,
+                "creationTimestamp": "2025-11-16T13:00:49Z",
+                "labels": {
+                    "DefaultEnvName": "ebao_kic_insuremo_ptdev",
+                    "app": "boot-admin",
+                    "pod-template-hash": "55d697fbb5",
+                    "spring-boot": "true"
+                },
+                "annotations": {
+                    "app": "boot-admin",
+                    "kubectl.kubernetes.io/restartedAt": "2025-04-11T12:10:38+08:00",
+                    "prometheus.io/scrape": "true",
+                    "real_status": "Succeeded",
+                    "restart_at": "2025-03-28 08:08:52.842908266 +0000 UTC m=+942047.157404832"
+                } 
+			}
+		}
+	]
+}	
+
+
+## deployment log query
+https://portal.insuremo.com/api/mo-fo/1.0/ops/pod_logs?pod_name={stbd-claim-bff-64b885fd86-4lgmp}&app_name={stbd-claim-bff}&previous=false
+
+x-mo-target-env： {imo_kic_insuremo_ptdev}   //environment
+x-mo-target-tenant： {stbdcr}                 //workspace 
+authorization： Bearer {0zCgOiBvTzy3D9CznbxaMg}    
+
+response: 
+{
+    "data": " .... ",
+    "status": "SUCCESS",
+    "status_code": 200
 }

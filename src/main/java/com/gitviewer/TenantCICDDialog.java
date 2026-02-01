@@ -197,6 +197,48 @@ public class TenantCICDDialog extends JDialog {
         statusLabel.setForeground(new Color(95, 99, 104));
         panel.add(statusLabel);
         
+        // Build 按钮 - 紫色
+        buildButton = new JButton("<html><font color='white'><b>Build</b></font></html>");
+        buildButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        buildButton.setPreferredSize(new Dimension(100, 32));
+        buildButton.setBackground(new Color(142, 68, 173));
+        buildButton.setForeground(Color.WHITE);
+        buildButton.setOpaque(true);
+        buildButton.setContentAreaFilled(true);
+        buildButton.setFocusPainted(false);
+        buildButton.setBorderPainted(false);
+        buildButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        buildButton.addActionListener(e -> handleBuild());
+        panel.add(buildButton);
+        
+        // Deployment 按钮 - 深绿色
+        deployButton = new JButton("<html><font color='white'><b>Deployment</b></font></html>");
+        deployButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        deployButton.setPreferredSize(new Dimension(120, 32));
+        deployButton.setBackground(new Color(34, 139, 34));
+        deployButton.setForeground(Color.WHITE);
+        deployButton.setOpaque(true);
+        deployButton.setContentAreaFilled(true);
+        deployButton.setFocusPainted(false);
+        deployButton.setBorderPainted(false);
+        deployButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        deployButton.addActionListener(e -> handleDeployment());
+        panel.add(deployButton);
+        
+        // Close 按钮 - 灰色
+        JButton closeButton = new JButton("<html><font color='white'><b>Close</b></font></html>");
+        closeButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        closeButton.setPreferredSize(new Dimension(100, 32));
+        closeButton.setBackground(new Color(95, 99, 104));
+        closeButton.setForeground(Color.WHITE);
+        closeButton.setOpaque(true);
+        closeButton.setContentAreaFilled(true);
+        closeButton.setFocusPainted(false);
+        closeButton.setBorderPainted(false);
+        closeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        closeButton.addActionListener(e -> dispose());
+        panel.add(closeButton);
+        
         // Loading indicator
         loadingLabel = new JLabel("Loading...");
         loadingLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
@@ -428,48 +470,6 @@ public class TenantCICDDialog extends JDialog {
         copyImageNamesButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         copyImageNamesButton.addActionListener(e -> handleCopyImageNames());
         panel.add(copyImageNamesButton);
-        
-        // Build 按钮 - 紫色
-        buildButton = new JButton("<html><font color='white'><b>Build</b></font></html>");
-        buildButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        buildButton.setPreferredSize(new Dimension(100, 35));
-        buildButton.setBackground(new Color(142, 68, 173));
-        buildButton.setForeground(Color.WHITE);
-        buildButton.setOpaque(true);
-        buildButton.setContentAreaFilled(true);
-        buildButton.setFocusPainted(false);
-        buildButton.setBorderPainted(false);
-        buildButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        buildButton.addActionListener(e -> handleBuild());
-        panel.add(buildButton);
-        
-        // Deployment 按钮 - 深绿色
-        deployButton = new JButton("<html><font color='white'><b>Deployment</b></font></html>");
-        deployButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        deployButton.setPreferredSize(new Dimension(120, 35));
-        deployButton.setBackground(new Color(34, 139, 34));
-        deployButton.setForeground(Color.WHITE);
-        deployButton.setOpaque(true);
-        deployButton.setContentAreaFilled(true);
-        deployButton.setFocusPainted(false);
-        deployButton.setBorderPainted(false);
-        deployButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        deployButton.addActionListener(e -> handleDeployment());
-        panel.add(deployButton);
-        
-        // Close 按钮 - 灰色
-        JButton closeButton = new JButton("<html><font color='white'><b>Close</b></font></html>");
-        closeButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        closeButton.setPreferredSize(new Dimension(100, 35));
-        closeButton.setBackground(new Color(95, 99, 104));
-        closeButton.setForeground(Color.WHITE);
-        closeButton.setOpaque(true);
-        closeButton.setContentAreaFilled(true);
-        closeButton.setFocusPainted(false);
-        closeButton.setBorderPainted(false);
-        closeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        closeButton.addActionListener(e -> dispose());
-        panel.add(closeButton);
         
         return panel;
     }
@@ -1634,14 +1634,18 @@ public class TenantCICDDialog extends JDialog {
         
         // 停止并清理防抖Timer
         if (filterTimer != null) {
-            filterTimer.stop();
+            if (filterTimer.isRunning()) {
+                filterTimer.stop();
+            }
             filterTimer = null;
             logger.debug("Filter timer stopped");
         }
         
         // 停止并清理hover Timer
         if (hoverTimer != null) {
-            hoverTimer.stop();
+            if (hoverTimer.isRunning()) {
+                hoverTimer.stop();
+            }
             hoverTimer = null;
             logger.debug("Hover timer stopped");
         }
@@ -1658,19 +1662,53 @@ public class TenantCICDDialog extends JDialog {
             }
         }
         
+        // 移除表格的所有监听器
+        if (resultsTable != null) {
+            try {
+                // 移除鼠标监听器
+                java.awt.event.MouseListener[] mouseListeners = resultsTable.getMouseListeners();
+                for (java.awt.event.MouseListener listener : mouseListeners) {
+                    resultsTable.removeMouseListener(listener);
+                }
+                
+                // 移除鼠标移动监听器
+                java.awt.event.MouseMotionListener[] motionListeners = resultsTable.getMouseMotionListeners();
+                for (java.awt.event.MouseMotionListener listener : motionListeners) {
+                    resultsTable.removeMouseMotionListener(listener);
+                }
+                
+                logger.debug("Table listeners removed successfully");
+            } catch (Exception e) {
+                logger.warn("Failed to remove table listeners: {}", e.getMessage());
+            }
+        }
+        
         // 清除敏感数据
         currentToken = null;
         
         // 清除缓存数据
         if (allAppNames != null) {
             allAppNames.clear();
+            allAppNames = null;
         }
         if (filteredAppNames != null) {
             filteredAppNames.clear();
+            filteredAppNames = null;
+        }
+        if (allResults != null) {
+            allResults.clear();
+            allResults = null;
         }
         
         // 清空表格数据
-        tableModel.setResults(new ArrayList<>());
+        if (tableModel != null) {
+            tableModel.setResults(new ArrayList<>());
+        }
+        
+        // 清空API客户端引用
+        apiClient = null;
+        
+        logger.info("Tenant CI/CD Dialog disposed successfully");
         
         super.dispose();
     }

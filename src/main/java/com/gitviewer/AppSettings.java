@@ -485,6 +485,19 @@ public class AppSettings {
             saveJenkinsFavorites();
         }
     }
+    
+    /**
+     * 更新收藏任务的别名
+     */
+    public void updateJenkinsFavoriteAlias(String jobPath, String alias) {
+        for (FavoriteJob job : jenkinsFavorites) {
+            if (job.getJobPath().equals(jobPath)) {
+                job.setAlias(alias);
+                saveJenkinsFavorites();
+                break;
+            }
+        }
+    }
 
     /**
      * 保存 Jenkins 收藏数据到文件

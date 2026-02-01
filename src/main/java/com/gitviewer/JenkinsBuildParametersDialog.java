@@ -303,13 +303,16 @@ public class JenkinsBuildParametersDialog extends JDialog {
             JComponent component = parameterComponents.get(param.getName());
             String value = extractValue(component);
             
-            // 验证必填参数
+            // 验证必填参数（ENV_NAME 不需要必填验证）
             if ((value == null || value.trim().isEmpty()) && param.getDefaultValue() == null) {
-                JOptionPane.showMessageDialog(this,
-                    "Please fill in all required parameters: " + param.getName(),
-                    "Validation Error",
-                    JOptionPane.ERROR_MESSAGE);
-                return;
+                // ENV_NAME 参数允许为空，跳过验证
+                if (!"ENV_NAME".equals(param.getName())) {
+                    JOptionPane.showMessageDialog(this,
+                        "Please fill in all required parameters: " + param.getName(),
+                        "Validation Error",
+                        JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
             }
             
             if (value != null && !value.trim().isEmpty()) {

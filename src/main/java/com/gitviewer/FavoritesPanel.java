@@ -2,18 +2,22 @@ package com.gitviewer;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
+import javax.swing.table.AbstractTableModel;
+import javax.swing.table.TableCellEditor;
+import javax.swing.table.TableCellRenderer;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Jenkins 收藏任务面板
- * 显示用户收藏的 Jenkins Job 列表，支持快速定位
+ * 显示用户收藏的 Jenkins Job 列表，支持快速定位和别名编辑
  */
 public class FavoritesPanel extends JPanel {
-    private JList<FavoriteJob> favoritesList;
-    private DefaultListModel<FavoriteJob> listModel;
+    private JTable favoritesTable;
+    private FavoritesTableModel tableModel;
     private JenkinsBrowserDialog parentDialog;
     private JPopupMenu popupMenu;
     
@@ -33,46 +37,42 @@ public class FavoritesPanel extends JPanel {
         border.setTitleFont(new Font("Segoe UI", Font.BOLD, 12));
         setBorder(border);
         
-        // 创建列表模型和列表
-        listModel = new DefaultListModel<>();
-        favoritesList = new JList<>(listModel);
-        favoritesList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        favoritesList.setCellRenderer(new FavoriteJobRenderer());
-        favoritesList.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        // 创建表格模型和表格
+        tableModel = new FavoritesTableModel();
+        favoritesTable = new JTable(tableModel);
+        favoritesTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        favoritesTable.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        favoritesTable.setRowHeight(32);
+        favoritesTable.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
+        favoritesTable.getTableHeader().setBackground(new Color(248, 249, 250));
+        favoritesTable.getTableHeader().setForeground(new Color(60, 64, 67));
+        favoritesTable.setShowGrid(true);
+        favoritesTable.setGridColor(new Color(240, 240, 240));
+        
+        // 设置列宽
+        favoritesTable.getColumnModel().getColumn(0).setPreferredWidth(400);  // Job Path
+        favoritesTable.getColumnModel().getColumn(1).setPreferredWidth(150);  // Alias
         
         // 添加双击监听器 - 定位到任务
-        favoritesList.addMouseListener(new MouseAdapter() {
+        favoritesTable.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                System.out.println("=== Mouse Clicked ===");
-                System.out.println("Click count: " + e.getClickCount());
-                System.out.println("Button: " + e.getButton());
-                
                 if (e.getClickCount() == 2) {
-                    System.out.println("Double-click detected!");
-                    int index = favoritesList.locationToIndex(e.getPoint());
-                    System.out.println("Index: " + index);
+                    int row = favoritesTable.rowAtPoint(e.getPoint());
+                    int col = favoritesTable.columnAtPoint(e.getPoint());
                     
-                    if (index >= 0) {
-                        FavoriteJob job = listModel.getElementAt(index);
-                        System.out.println("Job retrieved: " + (job != null ? job.getDisplayName() : "NULL"));
-                        
+                    // 如果双击的不是别名列，则导航到任务
+                    if (row >= 0 && col != 1) {
+                        FavoriteJob job = tableModel.getJobAt(row);
                         if (job != null) {
                             navigateToJob(job);
-                        } else {
-                            System.out.println("ERROR: Job is null!");
                         }
-                    } else {
-                        System.out.println("ERROR: Invalid index!");
                     }
-                } else {
-                    System.out.println("Single click, ignoring");
                 }
             }
             
             @Override
             public void mousePressed(MouseEvent e) {
-                System.out.println("Mouse pressed: button=" + e.getButton() + ", isPopupTrigger=" + e.isPopupTrigger());
                 if (e.isPopupTrigger()) {
                     showPopupMenu(e);
                 }
@@ -80,7 +80,6 @@ public class FavoritesPanel extends JPanel {
             
             @Override
             public void mouseReleased(MouseEvent e) {
-                System.out.println("Mouse released: button=" + e.getButton() + ", isPopupTrigger=" + e.isPopupTrigger());
                 if (e.isPopupTrigger()) {
                     showPopupMenu(e);
                 }
@@ -91,16 +90,9 @@ public class FavoritesPanel extends JPanel {
         createPopupMenu();
         
         // 添加滚动面板
-        JScrollPane scrollPane = new JScrollPane(favoritesList);
+        JScrollPane scrollPane = new JScrollPane(favoritesTable);
         scrollPane.setPreferredSize(new Dimension(0, 150));
         add(scrollPane, BorderLayout.CENTER);
-        
-        // If list is empty, show hint
-        if (listModel.isEmpty()) {
-            JLabel emptyLabel = new JLabel("No favorite jobs", SwingConstants.CENTER);
-            emptyLabel.setForeground(Color.GRAY);
-            add(emptyLabel, BorderLayout.NORTH);
-        }
     }
     
     /**
@@ -111,26 +103,26 @@ public class FavoritesPanel extends JPanel {
         
         JMenuItem removeItem = new JMenuItem("Remove from Favorites");
         removeItem.addActionListener(e -> {
-            int index = favoritesList.getSelectedIndex();
-            if (index >= 0) {
-                FavoriteJob job = listModel.getElementAt(index);
+            int row = favoritesTable.getSelectedRow();
+            if (row >= 0) {
+                FavoriteJob job = tableModel.getJobAt(row);
                 removeFavorite(job);
             }
         });
         
         JMenuItem moveUpItem = new JMenuItem("Move Up");
         moveUpItem.addActionListener(e -> {
-            int index = favoritesList.getSelectedIndex();
-            if (index > 0) {
-                moveFavoriteUp(index);
+            int row = favoritesTable.getSelectedRow();
+            if (row > 0) {
+                moveFavoriteUp(row);
             }
         });
         
         JMenuItem moveDownItem = new JMenuItem("Move Down");
         moveDownItem.addActionListener(e -> {
-            int index = favoritesList.getSelectedIndex();
-            if (index >= 0 && index < listModel.getSize() - 1) {
-                moveFavoriteDown(index);
+            int row = favoritesTable.getSelectedRow();
+            if (row >= 0 && row < tableModel.getRowCount() - 1) {
+                moveFavoriteDown(row);
             }
         });
         
@@ -144,9 +136,9 @@ public class FavoritesPanel extends JPanel {
      * 显示右键菜单
      */
     private void showPopupMenu(MouseEvent e) {
-        int index = favoritesList.locationToIndex(e.getPoint());
-        if (index >= 0) {
-            favoritesList.setSelectedIndex(index);
+        int row = favoritesTable.rowAtPoint(e.getPoint());
+        if (row >= 0) {
+            favoritesTable.setRowSelectionInterval(row, row);
             popupMenu.show(e.getComponent(), e.getX(), e.getY());
         }
     }
@@ -158,17 +150,12 @@ public class FavoritesPanel extends JPanel {
         if (job == null) return;
         
         // 检查是否已存在
-        for (int i = 0; i < listModel.getSize(); i++) {
-            if (listModel.getElementAt(i).getJobPath().equals(job.getJobPath())) {
-                return; // 已存在
-            }
+        if (tableModel.containsJob(job.getJobPath())) {
+            return; // 已存在
         }
         
-        listModel.addElement(job);
+        tableModel.addJob(job);
         AppSettings.getInstance().addJenkinsFavorite(job);
-        
-        // 移除空提示
-        removeEmptyLabel();
     }
     
     /**
@@ -177,13 +164,8 @@ public class FavoritesPanel extends JPanel {
     public void removeFavorite(FavoriteJob job) {
         if (job == null) return;
         
-        listModel.removeElement(job);
+        tableModel.removeJob(job);
         AppSettings.getInstance().removeJenkinsFavorite(job.getJobPath());
-        
-        // 如果列表为空，显示提示
-        if (listModel.isEmpty()) {
-            showEmptyLabel();
-        }
         
         // 通知父对话框更新树节点显示
         if (parentDialog != null) {
@@ -194,24 +176,22 @@ public class FavoritesPanel extends JPanel {
     /**
      * 上移收藏任务
      */
-    public void moveFavoriteUp(int index) {
-        if (index > 0 && index < listModel.getSize()) {
-            FavoriteJob job = listModel.remove(index);
-            listModel.add(index - 1, job);
-            favoritesList.setSelectedIndex(index - 1);
-            AppSettings.getInstance().moveFavoriteUp(index);
+    public void moveFavoriteUp(int row) {
+        if (row > 0 && row < tableModel.getRowCount()) {
+            tableModel.moveJobUp(row);
+            favoritesTable.setRowSelectionInterval(row - 1, row - 1);
+            AppSettings.getInstance().moveFavoriteUp(row);
         }
     }
     
     /**
      * 下移收藏任务
      */
-    public void moveFavoriteDown(int index) {
-        if (index >= 0 && index < listModel.getSize() - 1) {
-            FavoriteJob job = listModel.remove(index);
-            listModel.add(index + 1, job);
-            favoritesList.setSelectedIndex(index + 1);
-            AppSettings.getInstance().moveFavoriteDown(index);
+    public void moveFavoriteDown(int row) {
+        if (row >= 0 && row < tableModel.getRowCount() - 1) {
+            tableModel.moveJobDown(row);
+            favoritesTable.setRowSelectionInterval(row + 1, row + 1);
+            AppSettings.getInstance().moveFavoriteDown(row);
         }
     }
     
@@ -219,34 +199,16 @@ public class FavoritesPanel extends JPanel {
      * 加载收藏列表
      */
     public void loadFavorites(List<FavoriteJob> favorites) {
-        listModel.clear();
-        if (favorites != null) {
-            for (FavoriteJob job : favorites) {
-                listModel.addElement(job);
-            }
-        }
-        
-        if (listModel.isEmpty()) {
-            showEmptyLabel();
-        } else {
-            removeEmptyLabel();
-        }
+        tableModel.setJobs(favorites);
     }
     
     /**
      * Navigate to favorited job
      */
     private void navigateToJob(FavoriteJob job) {
-        System.out.println("=== navigateToJob called ===");
-        System.out.println("VERSION CHECK: FavoritesPanel compiled at: " + java.time.LocalDateTime.now());
-        System.out.println("Job: " + job.getDisplayName());
-        System.out.println("Job Path: " + job.getJobPath());
-        System.out.println("Parent Dialog: " + (parentDialog != null ? "SET" : "NULL"));
-        
         if (parentDialog != null) {
             // 检查 Jenkins 是否正在加载
             if (parentDialog.isLoading()) {
-                System.out.println("Jenkins is still loading, showing message...");
                 JOptionPane.showMessageDialog(
                     this,
                     "Jenkins is loading now, please wait...",
@@ -270,25 +232,18 @@ public class FavoritesPanel extends JPanel {
             loadingDialog.setLocationRelativeTo(this);
             loadingDialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
             
-            System.out.println("Loading dialog created");
-            
             // 在后台线程中执行导航
             SwingWorker<Boolean, Void> worker = new SwingWorker<Boolean, Void>() {
                 @Override
                 protected Boolean doInBackground() throws Exception {
-                    System.out.println("SwingWorker: doInBackground started");
-                    boolean result = parentDialog.navigateToJobPath(job.getJobPath());
-                    System.out.println("SwingWorker: navigateToJobPath returned: " + result);
-                    return result;
+                    return parentDialog.navigateToJobPath(job.getJobPath());
                 }
                 
                 @Override
                 protected void done() {
-                    System.out.println("SwingWorker: done() called");
                     loadingDialog.dispose();
                     try {
                         boolean success = get();
-                        System.out.println("SwingWorker: success = " + success);
                         if (!success) {
                             // Navigation failed, ask if should remove
                             int result = JOptionPane.showConfirmDialog(
@@ -304,8 +259,6 @@ public class FavoritesPanel extends JPanel {
                             }
                         }
                     } catch (Exception e) {
-                        System.out.println("SwingWorker: Exception in done(): " + e.getMessage());
-                        e.printStackTrace();
                         JOptionPane.showMessageDialog(
                             FavoritesPanel.this,
                             "Error navigating to job: " + e.getMessage(),
@@ -316,88 +269,127 @@ public class FavoritesPanel extends JPanel {
                 }
             };
             
-            System.out.println("Starting SwingWorker...");
             worker.execute();
-            System.out.println("Showing loading dialog...");
             loadingDialog.setVisible(true);
-            System.out.println("Loading dialog closed");
-        } else {
-            System.out.println("ERROR: parentDialog is null!");
         }
     }
     
     /**
-     * Show empty list hint
+     * 收藏任务表格模型
      */
-    private void showEmptyLabel() {
-        // Remove existing empty hint
-        removeEmptyLabel();
+    private class FavoritesTableModel extends AbstractTableModel {
+        private List<FavoriteJob> jobs;
+        private String[] columnNames = {"Job Path", "Alias"};
         
-        JLabel emptyLabel = new JLabel("No favorite jobs", SwingConstants.CENTER);
-        emptyLabel.setForeground(Color.GRAY);
-        emptyLabel.setName("emptyLabel");
-        add(emptyLabel, BorderLayout.NORTH);
-        revalidate();
-        repaint();
-    }
-    
-    /**
-     * 移除空列表提示
-     */
-    private void removeEmptyLabel() {
-        Component[] components = getComponents();
-        for (Component comp : components) {
-            if (comp instanceof JLabel && "emptyLabel".equals(comp.getName())) {
-                remove(comp);
-                revalidate();
-                repaint();
-                break;
+        public FavoritesTableModel() {
+            this.jobs = new ArrayList<>();
+        }
+        
+        public void setJobs(List<FavoriteJob> jobs) {
+            this.jobs = jobs != null ? new ArrayList<>(jobs) : new ArrayList<>();
+            fireTableDataChanged();
+        }
+        
+        public void addJob(FavoriteJob job) {
+            jobs.add(job);
+            fireTableRowsInserted(jobs.size() - 1, jobs.size() - 1);
+        }
+        
+        public void removeJob(FavoriteJob job) {
+            int index = jobs.indexOf(job);
+            if (index >= 0) {
+                jobs.remove(index);
+                fireTableRowsDeleted(index, index);
             }
         }
-    }
-    
-    /**
-     * Custom list renderer
-     * Display job name and path hint, handle long text truncation
-     */
-    private static class FavoriteJobRenderer extends DefaultListCellRenderer {
+        
+        public void moveJobUp(int row) {
+            if (row > 0 && row < jobs.size()) {
+                FavoriteJob job = jobs.remove(row);
+                jobs.add(row - 1, job);
+                fireTableRowsUpdated(row - 1, row);
+            }
+        }
+        
+        public void moveJobDown(int row) {
+            if (row >= 0 && row < jobs.size() - 1) {
+                FavoriteJob job = jobs.remove(row);
+                jobs.add(row + 1, job);
+                fireTableRowsUpdated(row, row + 1);
+            }
+        }
+        
+        public FavoriteJob getJobAt(int row) {
+            if (row >= 0 && row < jobs.size()) {
+                return jobs.get(row);
+            }
+            return null;
+        }
+        
+        public boolean containsJob(String jobPath) {
+            for (FavoriteJob job : jobs) {
+                if (job.getJobPath().equals(jobPath)) {
+                    return true;
+                }
+            }
+            return false;
+        }
         
         @Override
-        public Component getListCellRendererComponent(
-                JList<?> list, Object value, int index,
-                boolean isSelected, boolean cellHasFocus) {
-            
-            super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-            
-            if (value instanceof FavoriteJob) {
-                FavoriteJob job = (FavoriteJob) value;
-                
-                // Display full job path instead of just name
-                String jobPath = job.getJobPath();
-                
-                // Use star icon for favorite
-                String displayText = "[*] " + jobPath;
-                
-                setText(displayText);
-                
-                // Set tooltip to show full path
-                String tooltip = "<html>" +
-                        "<b>Job Name:</b> " + job.getDisplayName() + "<br>" +
-                        "<b>Full Path:</b> " + jobPath +
-                        "</html>";
-                setToolTipText(tooltip);
-                
-                // Set icon and style
-                setIcon(null); // Use star in text instead of icon
-                
-                // Set font - larger and clearer
-                setFont(new Font("Segoe UI", Font.PLAIN, 12));
-                
-                // Set margins
-                setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
+        public int getRowCount() {
+            return jobs.size();
+        }
+        
+        @Override
+        public int getColumnCount() {
+            return columnNames.length;
+        }
+        
+        @Override
+        public String getColumnName(int column) {
+            return columnNames[column];
+        }
+        
+        @Override
+        public Object getValueAt(int row, int column) {
+            if (row < 0 || row >= jobs.size()) {
+                return "";
             }
             
-            return this;
+            FavoriteJob job = jobs.get(row);
+            
+            switch (column) {
+                case 0:
+                    return "[*] " + job.getJobPath();
+                case 1:
+                    return job.getAlias() != null ? job.getAlias() : "";
+                default:
+                    return "";
+            }
+        }
+        
+        @Override
+        public boolean isCellEditable(int row, int column) {
+            // 只有别名列可编辑
+            return column == 1;
+        }
+        
+        @Override
+        public void setValueAt(Object value, int row, int column) {
+            if (row < 0 || row >= jobs.size()) {
+                return;
+            }
+            
+            if (column == 1) {
+                FavoriteJob job = jobs.get(row);
+                String newAlias = value != null ? value.toString().trim() : "";
+                job.setAlias(newAlias.isEmpty() ? null : newAlias);
+                
+                // 保存到设置
+                AppSettings.getInstance().updateJenkinsFavoriteAlias(job.getJobPath(), job.getAlias());
+                
+                fireTableCellUpdated(row, column);
+            }
         }
     }
 }

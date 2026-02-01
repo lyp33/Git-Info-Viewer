@@ -106,36 +106,49 @@ public class JenkinsBuild {
 
     /**
      * 获取格式化的显示信息
-     * 格式: "#154 - Failed - Jan 13, 2026 21:02 - by yunpeng.li - [VERSION: 2.3.1]"
+     * 格式: "[OK] gemini-bs / 24.08_thailife_devsdk_v0.056 / Jan 26, 2026 12:00"
      */
     public String getFormattedDisplay() {
         StringBuilder sb = new StringBuilder();
         
-        // 构建编号
-        sb.append("#").append(number);
-        
-        // 状态
-        sb.append(" - ");
-        if (result != null) {
-            sb.append(result);
+        // 1. Service Name
+        String serviceName = null;
+        if (parameters != null && parameters.containsKey("SERVICE_NAME")) {
+            serviceName = parameters.get("SERVICE_NAME");
+        }
+        if (serviceName != null && !serviceName.isEmpty()) {
+            sb.append(serviceName);
         } else {
-            sb.append("IN_PROGRESS");
+            sb.append("N/A");
         }
         
-        // 时间
-        sb.append(" - ");
+        sb.append(" / ");
+        
+        // 2. Version (优先使用 versions，其次 VERSION)
+        String version = null;
+        if (parameters != null) {
+            if (parameters.containsKey("versions")) {
+                version = parameters.get("versions");
+            } else if (parameters.containsKey("VERSIONS")) {
+                version = parameters.get("VERSIONS");
+            } else if (parameters.containsKey("VERSION")) {
+                version = parameters.get("VERSION");
+            }
+        }
+        if (version != null && !version.isEmpty()) {
+            // 截断过长的版本号
+            if (version.length() > 40) {
+                version = version.substring(0, 37) + "...";
+            }
+            sb.append(version);
+        } else {
+            sb.append("N/A");
+        }
+        
+        sb.append(" / ");
+        
+        // 3. Time
         sb.append(formatTimestamp(timestamp));
-        
-        // 触发用户
-        if (triggeredBy != null && !triggeredBy.isEmpty()) {
-            sb.append(" - by ").append(triggeredBy);
-        }
-        
-        // 关键参数
-        String keyParams = extractKeyParameters();
-        if (!keyParams.isEmpty()) {
-            sb.append(" - ").append(keyParams);
-        }
         
         return sb.toString();
     }
