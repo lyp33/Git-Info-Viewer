@@ -660,6 +660,9 @@ public class InfoPanel extends JPanel {
         String[] columnNames = {"Select", "Name", "Type", "Branch", "Remote", "Last Modified", "Author", "Action"};
         tableModel = new NonEditableTableModel(new Object[][]{}, columnNames);
 
+        // 按文件夹名称排序（不区分大小写）
+        java.util.Arrays.sort(children, (f1, f2) -> f1.getName().compareToIgnoreCase(f2.getName()));
+
         for (File child : children) {
             if (child.isDirectory() && !child.getName().startsWith(".")) {
                 Vector<Object> row = new Vector<>();
@@ -761,7 +764,8 @@ public class InfoPanel extends JPanel {
                 }
             };
 
-            gitReposTable.setAutoCreateRowSorter(true);
+            // 禁用自动排序，保持按文件夹名称的固定顺序
+            gitReposTable.setAutoCreateRowSorter(false);
             gitReposTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
             gitReposTable.setRowHeight(32);
             gitReposTable.setIntercellSpacing(new Dimension(0, 0));
@@ -791,6 +795,21 @@ public class InfoPanel extends JPanel {
             // 为 Select 列添加复选框渲染器和编辑器
             gitReposTable.getColumnModel().getColumn(0).setCellRenderer(new CheckBoxCellRenderer());
             gitReposTable.getColumnModel().getColumn(0).setCellEditor(new CheckBoxCellEditor());
+            
+            // 为 Select 列的表头添加全选/反选复选框
+            TableColumn selectColumn = gitReposTable.getColumnModel().getColumn(0);
+            selectColumn.setHeaderRenderer(new SelectAllHeaderRenderer());
+            
+            // 添加表头点击监听器
+            header.addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override
+                public void mouseClicked(java.awt.event.MouseEvent e) {
+                    int column = header.columnAtPoint(e.getPoint());
+                    if (column == 0) { // Select 列
+                        toggleSelectAll();
+                    }
+                }
+            });
 
             // Type 列渲染器 - 居中对齐，Git Repo显示红色
             DefaultTableCellRenderer typeRenderer = new DefaultTableCellRenderer() {
@@ -911,6 +930,44 @@ public class InfoPanel extends JPanel {
             }
         }
         return false;
+    }
+    
+    /**
+     * 全选/反选所有 Git 仓库
+     */
+    private void toggleSelectAll() {
+        if (gitReposTable == null || gitReposTable.getModel() == null) {
+            return;
+        }
+        
+        DefaultTableModel model = (DefaultTableModel) gitReposTable.getModel();
+        
+        // 检查当前是否有任何选中的 Git 仓库
+        boolean hasSelected = false;
+        for (int i = 0; i < model.getRowCount(); i++) {
+            String type = (String) model.getValueAt(i, 2);
+            if ("[Git Repo]".equals(type)) {
+                Boolean selected = (Boolean) model.getValueAt(i, 0);
+                if (selected != null && selected) {
+                    hasSelected = true;
+                    break;
+                }
+            }
+        }
+        
+        // 如果有选中的，则全部取消选中；否则全部选中
+        boolean newState = !hasSelected;
+        
+        for (int i = 0; i < model.getRowCount(); i++) {
+            String type = (String) model.getValueAt(i, 2);
+            if ("[Git Repo]".equals(type)) {
+                model.setValueAt(newState, i, 0);
+            }
+        }
+        
+        // 刷新表格和表头
+        gitReposTable.repaint();
+        gitReposTable.getTableHeader().repaint();
     }
 
     private class BranchCellRenderer extends JComboBox<String> implements TableCellRenderer {
@@ -1261,7 +1318,13 @@ public class InfoPanel extends JPanel {
             checkBox.addActionListener(e -> {
                 updateCheckBoxIcon();
                 // 立即停止编辑以确保值被保存
-                SwingUtilities.invokeLater(() -> fireEditingStopped());
+                SwingUtilities.invokeLater(() -> {
+                    fireEditingStopped();
+                    // 更新表头复选框状态
+                    if (gitReposTable != null && gitReposTable.getTableHeader() != null) {
+                        gitReposTable.getTableHeader().repaint();
+                    }
+                });
             });
         }
         
@@ -1329,6 +1392,106 @@ public class InfoPanel extends JPanel {
          * 创建扁平化的勾选图标（复用CheckBoxCellRenderer的方法）
          */
         private Icon createCheckIcon(boolean checked) {
+            return new Icon() {
+                @Override
+                public void paintIcon(Component c, Graphics g, int x, int y) {
+                    Graphics2D g2 = (Graphics2D) g.create();
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    
+                    int size = 16;
+                    
+                    // 绘制外框
+                    g2.setColor(new Color(200, 200, 200));
+                    g2.setStroke(new BasicStroke(1.5f));
+                    g2.drawRoundRect(x + 2, y + 2, size - 4, size - 4, 3, 3);
+                    
+                    if (checked) {
+                        // 填充背景
+                        g2.setColor(PRIMARY_COLOR);
+                        g2.fillRoundRect(x + 2, y + 2, size - 4, size - 4, 3, 3);
+                        
+                        // 绘制勾选标记
+                        g2.setColor(Color.WHITE);
+                        g2.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                        int[] checkX = {x + 5, x + 8, x + 13};
+                        int[] checkY = {y + 8, y + 11, y + 6};
+                        for (int i = 0; i < checkX.length - 1; i++) {
+                            g2.drawLine(checkX[i], checkY[i], checkX[i + 1], checkY[i + 1]);
+                        }
+                    }
+                    
+                    g2.dispose();
+                }
+                
+                @Override
+                public int getIconWidth() { return 16; }
+                
+                @Override
+                public int getIconHeight() { return 16; }
+            };
+        }
+    }
+    
+    /**
+     * Select 列表头渲染器 - 支持全选/反选
+     */
+    private class SelectAllHeaderRenderer extends JCheckBox implements TableCellRenderer {
+        public SelectAllHeaderRenderer() {
+            setHorizontalAlignment(SwingConstants.CENTER);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setOpaque(true);
+            setBackground(HEADER_BG_COLOR);
+            setFont(new Font("Segoe UI", Font.BOLD, 12));
+            setToolTipText("Click to select/deselect all Git repositories");
+        }
+        
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                boolean isSelected, boolean hasFocus, int row, int column) {
+            
+            // 检查是否所有 Git 仓库都被选中
+            boolean allSelected = true;
+            boolean hasGitRepo = false;
+            
+            if (table != null && table.getModel() != null) {
+                DefaultTableModel model = (DefaultTableModel) table.getModel();
+                for (int i = 0; i < model.getRowCount(); i++) {
+                    String type = (String) model.getValueAt(i, 2);
+                    if ("[Git Repo]".equals(type)) {
+                        hasGitRepo = true;
+                        Boolean selected = (Boolean) model.getValueAt(i, 0);
+                        if (selected == null || !selected) {
+                            allSelected = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // 如果没有 Git 仓库，不显示复选框
+            if (!hasGitRepo) {
+                setSelected(false);
+                setEnabled(false);
+                setIcon(createHeaderCheckIcon(false));
+                setSelectedIcon(createHeaderCheckIcon(false));
+            } else {
+                setSelected(allSelected);
+                setEnabled(true);
+                // 根据实际选中状态设置图标
+                setIcon(createHeaderCheckIcon(allSelected));
+                setSelectedIcon(createHeaderCheckIcon(allSelected));
+            }
+            
+            setText("");
+            
+            return this;
+        }
+        
+        /**
+         * 创建表头的扁平化勾选图标
+         */
+        private Icon createHeaderCheckIcon(boolean checked) {
             return new Icon() {
                 @Override
                 public void paintIcon(Component c, Graphics g, int x, int y) {
