@@ -29,6 +29,33 @@ public class GitViewerApp extends JFrame {
         setSize(1400, 900);
         setLocationRelativeTo(null);
         
+        // 添加窗口关闭监听器，确保资源清理
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                System.out.println("Application closing - cleaning up resources...");
+                
+                // 清理所有可能的资源
+                try {
+                    // 停止所有Timer
+                    for (java.awt.Window window : java.awt.Window.getWindows()) {
+                        if (window instanceof JDialog) {
+                            window.dispose();
+                        }
+                    }
+                    
+                    // 强制退出
+                    System.out.println("Forcing application exit...");
+                    System.exit(0);
+                } catch (Exception ex) {
+                    System.err.println("Error during cleanup: " + ex.getMessage());
+                    ex.printStackTrace();
+                    // 即使清理失败也要退出
+                    System.exit(1);
+                }
+            }
+        });
+        
         // 设置窗口图标
         try {
             // 尝试从resources目录加载图标

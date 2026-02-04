@@ -973,6 +973,36 @@ public class PortalApiClient {
     }
     
     /**
+     * 提交单应用构建请求（用于rebuild）
+     * Submit single application build request
+     * 
+     * @param tenantCode 租户代码
+     * @param token 认证Token
+     * @param requestBody 请求体JSON字符串
+     * @return API响应
+     * @throws IOException 网络错误或API错误
+     */
+    public String submitSingleBuild(String tenantCode, String token, String requestBody) throws IOException {
+        logger.info("=== Submitting Single Build Request ===");
+        logger.info("TenantCode: {}", tenantCode);
+        logger.info("Request Body: {}", requestBody);
+        
+        String url = BASE_URL + "/api/mo-fo/1.0/ops/v2/build?clear_job=true&silences=true&force=false";
+        
+        // 构建请求头
+        Map<String, String> headers = new HashMap<>();
+        headers.put("x-mo-target-tenant", tenantCode);
+        headers.put("authorization", "Bearer " + token);
+        headers.put("Content-Type", "application/json");
+        
+        // 发送请求
+        String response = sendPostRequest(url, headers, requestBody);
+        
+        logger.info("Single build request submitted successfully");
+        return response;
+    }
+    
+    /**
      * 获取环境列表
      * Get environment list using new API
      * 

@@ -421,7 +421,7 @@ public class AIChatDialog extends JDialog {
         appendSystemMessage("💭 正在分析问题...");
 
         // 在后台线程处理
-        new Thread(() -> {
+        Thread thread = new Thread(() -> {
             try {
                 // **第一阶段：让 AI 决定调用哪个 API**
                 String apiInstruction = askAIForApiCall(userMessage);
@@ -501,7 +501,9 @@ public class AIChatDialog extends JDialog {
                     inputField.setEnabled(true);
                 });
             }
-        }).start();
+        });
+        thread.setDaemon(true);  // 设置为守护线程，防止阻止应用退出
+        thread.start();
     }
 
     /**

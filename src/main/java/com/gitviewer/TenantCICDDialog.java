@@ -80,6 +80,12 @@ public class TenantCICDDialog extends JDialog {
     private javax.swing.Timer hoverTimer;
     private int lastHoverRow = -1;
     
+    // Auto Refresh相关
+    private JCheckBox autoRefreshCheckBox;
+    private JTextField refreshIntervalField;
+    private javax.swing.Timer autoRefreshTimer;
+    private boolean isSearching = false;  // 标记是否正在搜索中
+    
     /**
      * 构造函数
      * 
@@ -424,6 +430,20 @@ public class TenantCICDDialog extends JDialog {
                     }
                 }
             }
+            
+            @Override
+            public void mousePressed(java.awt.event.MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    showContextMenu(e);
+                }
+            }
+            
+            @Override
+            public void mouseReleased(java.awt.event.MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    showContextMenu(e);
+                }
+            }
         });
         
         // 添加鼠标移动监听器 - 显示悬停提示
@@ -442,6 +462,33 @@ public class TenantCICDDialog extends JDialog {
     private JPanel createButtonPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
         panel.setBackground(Color.WHITE);
+        
+        // Auto Refresh 复选框
+        autoRefreshCheckBox = new JCheckBox("Auto Refresh");
+        autoRefreshCheckBox.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        autoRefreshCheckBox.setBackground(Color.WHITE);
+        autoRefreshCheckBox.setFocusPainted(false);
+        autoRefreshCheckBox.addActionListener(e -> handleAutoRefreshToggle());
+        panel.add(autoRefreshCheckBox);
+        
+        // 刷新间隔输入框
+        refreshIntervalField = new JTextField("10", 4);
+        refreshIntervalField.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        refreshIntervalField.setPreferredSize(new Dimension(50, 28));
+        refreshIntervalField.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(218, 220, 224), 1),
+            BorderFactory.createEmptyBorder(4, 8, 4, 8)
+        ));
+        refreshIntervalField.setToolTipText("Refresh interval in seconds");
+        panel.add(refreshIntervalField);
+        
+        JLabel secondsLabel = new JLabel("S");
+        secondsLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        secondsLabel.setForeground(new Color(95, 99, 104));
+        panel.add(secondsLabel);
+        
+        // 添加一些间距
+        panel.add(Box.createHorizontalStrut(20));
         
         // Download CSV 按钮 - 绿色
         downloadCsvButton = new JButton("<html><font color='white'><b>Download CSV</b></font></html>");
@@ -996,6 +1043,12 @@ public class TenantCICDDialog extends JDialog {
     private void handleSearch() {
         logger.info("=== User Action: Search Button Clicked ===");
         
+        // 检查是否正在搜索中
+        if (isSearching) {
+            logger.info("Search already in progress, skipping...");
+            return;
+        }
+        
         if (currentToken == null || currentToken.isEmpty()) {
             logger.warn("Search attempted without connection");
             JOptionPane.showMessageDialog(this,
@@ -1004,6 +1057,9 @@ public class TenantCICDDialog extends JDialog {
                 JOptionPane.WARNING_MESSAGE);
             return;
         }
+        
+        // 标记开始搜索
+        isSearching = true;
         
         // 获取查询参数
         String planName = planNameField.getText().trim();
@@ -1069,6 +1125,7 @@ public class TenantCICDDialog extends JDialog {
             @Override
             protected void done() {
                 hideLoading();
+                isSearching = false;  // 重置搜索标志
                 try {
                     List<BuildResult> results = get();
                     
@@ -1125,6 +1182,7 @@ public class TenantCICDDialog extends JDialog {
             @Override
             protected void done() {
                 hideLoading();
+                isSearching = false;  // 重置搜索标志
                 try {
                     List<BuildResult> results = get();
                     displayResults(results);
@@ -1650,6 +1708,15 @@ public class TenantCICDDialog extends JDialog {
             logger.debug("Hover timer stopped");
         }
         
+        // 停止并清理auto refresh Timer
+        if (autoRefreshTimer != null) {
+            if (autoRefreshTimer.isRunning()) {
+                autoRefreshTimer.stop();
+            }
+            autoRefreshTimer = null;
+            logger.debug("Auto refresh timer stopped");
+        }
+        
         // 移除KeyListener防止内存泄漏
         if (appNameKeyListener != null && appNameComboBox != null) {
             try {
@@ -1823,5 +1890,222 @@ public class TenantCICDDialog extends JDialog {
                 "Error",
                 JOptionPane.ERROR_MESSAGE);
         }
+    }
+    
+    /**
+     * 处理Auto Refresh开关切换
+     * Handle auto refresh toggle
+     */
+    private void handleAutoRefreshToggle() {
+        boolean enabled = autoRefreshCheckBox.isSelected();
+        logger.info("Auto refresh toggled: {}", enabled);
+        
+        if (enabled) {
+            // 启动自动刷新
+            startAutoRefresh();
+        } else {
+            // 停止自动刷新
+            stopAutoRefresh();
+        }
+    }
+    
+    /**
+     * 启动自动刷新
+     * Start auto refresh
+     */
+    private void startAutoRefresh() {
+        // 验证间隔时间
+        String intervalText = refreshIntervalField.getText().trim();
+        int intervalSeconds;
+        
+        try {
+            intervalSeconds = Integer.parseInt(intervalText);
+            if (intervalSeconds < 1) {
+                throw new NumberFormatException("Interval must be at least 1 second");
+            }
+        } catch (NumberFormatException e) {
+            logger.warn("Invalid refresh interval: {}", intervalText);
+            JOptionPane.showMessageDialog(this,
+                "Please enter a valid refresh interval (minimum 1 second)",
+                "Invalid Interval",
+                JOptionPane.WARNING_MESSAGE);
+            autoRefreshCheckBox.setSelected(false);
+            return;
+        }
+        
+        // 检查是否已连接
+        if (currentToken == null || currentToken.isEmpty()) {
+            logger.warn("Auto refresh attempted without connection");
+            JOptionPane.showMessageDialog(this,
+                "Please connect to a tenant first",
+                "Not Connected",
+                JOptionPane.WARNING_MESSAGE);
+            autoRefreshCheckBox.setSelected(false);
+            return;
+        }
+        
+        // 停止现有的Timer（如果有）
+        stopAutoRefresh();
+        
+        // 创建新的Timer
+        int intervalMillis = intervalSeconds * 1000;
+        autoRefreshTimer = new javax.swing.Timer(intervalMillis, e -> {
+            // 只有当上一次搜索完成后才触发新的搜索
+            if (!isSearching) {
+                logger.info("Auto refresh triggered");
+                handleSearch();
+            } else {
+                logger.info("Auto refresh skipped - previous search still in progress");
+            }
+        });
+        
+        autoRefreshTimer.setRepeats(true);
+        autoRefreshTimer.start();
+        
+        logger.info("Auto refresh started with interval: {} seconds", intervalSeconds);
+        
+        // 禁用间隔输入框
+        refreshIntervalField.setEnabled(false);
+    }
+    
+    /**
+     * 停止自动刷新
+     * Stop auto refresh
+     */
+    private void stopAutoRefresh() {
+        if (autoRefreshTimer != null) {
+            autoRefreshTimer.stop();
+            autoRefreshTimer = null;
+            logger.info("Auto refresh stopped");
+        }
+        
+        // 启用间隔输入框
+        refreshIntervalField.setEnabled(true);
+    }
+    
+    /**
+     * 显示右键菜单
+     * Show context menu on right-click
+     */
+    private void showContextMenu(java.awt.event.MouseEvent e) {
+        int row = resultsTable.rowAtPoint(e.getPoint());
+        if (row < 0) {
+            return;
+        }
+        
+        // 选中右键点击的行
+        resultsTable.setRowSelectionInterval(row, row);
+        
+        // 获取构建结果
+        int modelRow = resultsTable.convertRowIndexToModel(row);
+        List<BuildResult> results = tableModel.getResults();
+        if (modelRow < 0 || modelRow >= results.size()) {
+            return;
+        }
+        
+        BuildResult buildResult = results.get(modelRow);
+        String buildStatus = buildResult.getBuildStatus();
+        
+        // 只有Build Fail状态才显示Rebuild选项
+        if ("Build Fail".equalsIgnoreCase(buildStatus)) {
+            JPopupMenu popupMenu = new JPopupMenu();
+            
+            JMenuItem rebuildItem = new JMenuItem("Rebuild");
+            rebuildItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            rebuildItem.addActionListener(event -> handleRebuild(buildResult));
+            
+            popupMenu.add(rebuildItem);
+            popupMenu.show(e.getComponent(), e.getX(), e.getY());
+        }
+    }
+    
+    /**
+     * 处理Rebuild操作
+     * Handle rebuild action for failed builds
+     */
+    private void handleRebuild(BuildResult buildResult) {
+        logger.info("=== User Action: Rebuild ===");
+        logger.info("App: {}, Version: {}, Branch: {}", 
+                   buildResult.getAppName(), buildResult.getVersion(), buildResult.getGitBranch());
+        
+        // 确认对话框
+        int confirm = JOptionPane.showConfirmDialog(this,
+            "Rebuild the following build?\n\n" +
+            "App Name: " + buildResult.getAppName() + "\n" +
+            "Version: " + buildResult.getVersion() + "\n" +
+            "Git Branch: " + buildResult.getGitBranch() + "\n",
+            "Confirm Rebuild",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.QUESTION_MESSAGE);
+        
+        if (confirm != JOptionPane.YES_OPTION) {
+            logger.info("Rebuild cancelled by user");
+            return;
+        }
+        
+        // 检查连接状态
+        if (currentToken == null || currentToken.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                "Not connected. Please connect to a tenant first.",
+                "Not Connected",
+                JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        // 构建请求体
+        org.json.JSONObject requestBody = new org.json.JSONObject();
+        requestBody.put("app_name", buildResult.getAppName());
+        requestBody.put("build_args", "");
+        requestBody.put("build_type", "build_only");
+        requestBody.put("change_log", "");
+        requestBody.put("git_branch", buildResult.getGitBranch());
+        requestBody.put("issues", new org.json.JSONArray());
+        requestBody.put("plan_id", "");
+        requestBody.put("popconVisible", false);
+        requestBody.put("user_name", currentTenant);
+        requestBody.put("version", buildResult.getVersion());
+        
+        logger.info("Rebuild request body: {}", requestBody.toString());
+        
+        // 显示loading
+        showLoading("Submitting rebuild request...");
+        
+        // 异步提交rebuild请求
+        SwingWorker<String, Void> worker = new SwingWorker<>() {
+            @Override
+            protected String doInBackground() throws Exception {
+                // 调用build API
+                return apiClient.submitSingleBuild(currentTenant, currentToken, requestBody.toString());
+            }
+            
+            @Override
+            protected void done() {
+                hideLoading();
+                try {
+                    String response = get();
+                    logger.info("Rebuild submitted successfully");
+                    
+                    JOptionPane.showMessageDialog(TenantCICDDialog.this,
+                        "Rebuild request submitted successfully!\n\n" +
+                        "App: " + buildResult.getAppName() + "\n" +
+                        "Version: " + buildResult.getVersion(),
+                        "Rebuild Submitted",
+                        JOptionPane.INFORMATION_MESSAGE);
+                    
+                    // 自动刷新搜索结果
+                    if (!isSearching) {
+                        handleSearch();
+                    }
+                } catch (Exception e) {
+                    logger.error("Rebuild failed", e);
+                    JOptionPane.showMessageDialog(TenantCICDDialog.this,
+                        "Failed to submit rebuild request:\n" + e.getMessage(),
+                        "Rebuild Failed",
+                        JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        
+        worker.execute();
     }
 }
