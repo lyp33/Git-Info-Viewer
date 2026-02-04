@@ -48,6 +48,11 @@ public class AppSettings {
     private String portalUsername;
     private String portalPassword;  // 加密存储
     private List<String> portalTenantCodes;
+    
+    // Portal 收藏分组（Build Package功能）
+    // 使用租户代码作为key，存储每个租户的分组配置
+    // 格式：Map<tenantCode, List<FavoriteGroup>>
+    // 注意：这里不直接存储Map，而是在需要时从properties文件加载/保存
 
     // 默认字体
     private static final Font DEFAULT_LEFT_FONT = new Font("Arial", Font.PLAIN, 12);
@@ -584,8 +589,12 @@ public class AppSettings {
     }
     
     /**
-     * 获取Portal收藏的应用列表（按租户）
-     * Get Portal favorite applications for a specific tenant
+     * 获取Portal收藏的应用列表（按租户）- 兼容旧版本
+     * Get Portal favorite applications for a specific tenant - backward compatible
+     * 
+     * 注意：此方法用于向后兼容，新版本使用分组功能
+     * 如果存在分组数据，则返回所有分组中的应用 + 未分组应用
+     * 如果不存在分组数据，则返回旧格式的收藏列表
      * 
      * @param tenantCode 租户代码
      * @return 收藏的应用名称列表
@@ -595,6 +604,21 @@ public class AppSettings {
             return new ArrayList<>();
         }
         
+        // 先尝试加载分组数据
+        List<FavoriteGroup> groups = getPortalFavoriteGroups(tenantCode);
+        List<String> ungrouped = getPortalUngroupedFavorites(tenantCode);
+        
+        // 如果有分组数据，返回所有应用
+        if (!groups.isEmpty() || !ungrouped.isEmpty()) {
+            List<String> allFavorites = new ArrayList<>();
+            for (FavoriteGroup group : groups) {
+                allFavorites.addAll(group.getAppNames());
+            }
+            allFavorites.addAll(ungrouped);
+            return allFavorites;
+        }
+        
+        // 否则加载旧格式数据
         Properties props = new Properties();
         File file = new File(System.getProperty("user.home"), SETTINGS_FILE);
         
@@ -619,13 +643,68 @@ public class AppSettings {
     }
     
     /**
-     * 设置Portal收藏的应用列表（按租户）
-     * Set Portal favorite applications for a specific tenant
+     * 设置Portal收藏的应用列表（按租户）- 兼容旧版本
+     * Set Portal favorite applications for a specific tenant - backward compatible
+     * 
+     * 注意：此方法用于向后兼容，新版本使用分组功能
+     * 调用此方法会清除分组数据，将所有应用放入未分组列表
      * 
      * @param tenantCode 租户代码
      * @param favoriteApps 收藏的应用名称列表
      */
     public void setPortalFavoriteApps(String tenantCode, List<String> favoriteApps) {
+        if (tenantCode == null || tenantCode.isEmpty()) {
+            return;
+        }
+        
+        // 清除分组数据，将所有应用放入未分组列表
+        setPortalFavoriteGroups(tenantCode, new ArrayList<>());
+        setPortalUngroupedFavorites(tenantCode, favoriteApps != null ? favoriteApps : new ArrayList<>());
+    }
+    
+    /**
+     * 获取Portal收藏分组列表（按租户）
+     * Get Portal favorite groups for a specific tenant
+     * 
+     * @param tenantCode 租户代码
+     * @return 分组列表
+     */
+    public List<FavoriteGroup> getPortalFavoriteGroups(String tenantCode) {
+        if (tenantCode == null || tenantCode.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        Properties props = new Properties();
+        File file = new File(System.getProperty("user.home"), SETTINGS_FILE);
+        
+        if (file.exists()) {
+            try (FileInputStream fis = new FileInputStream(file)) {
+                props.load(fis);
+                String key = "portal.favorite.groups." + tenantCode;
+                String groupsJson = props.getProperty(key, "");
+                
+                if (groupsJson.isEmpty()) {
+                    return new ArrayList<>();
+                }
+                
+                // 解析JSON
+                return parseFavoriteGroupsJson(groupsJson);
+            } catch (IOException e) {
+                System.err.println("Error loading Portal favorite groups: " + e.getMessage());
+            }
+        }
+        
+        return new ArrayList<>();
+    }
+    
+    /**
+     * 设置Portal收藏分组列表（按租户）
+     * Set Portal favorite groups for a specific tenant
+     * 
+     * @param tenantCode 租户代码
+     * @param groups 分组列表
+     */
+    public void setPortalFavoriteGroups(String tenantCode, List<FavoriteGroup> groups) {
         if (tenantCode == null || tenantCode.isEmpty()) {
             return;
         }
@@ -642,11 +721,11 @@ public class AppSettings {
             }
         }
         
-        // 更新收藏列表
-        String key = "portal.favorites." + tenantCode;
-        if (favoriteApps != null && !favoriteApps.isEmpty()) {
-            String favoritesStr = TenantCICDUtils.formatTenantCodes(favoriteApps);
-            props.setProperty(key, favoritesStr);
+        // 更新分组列表
+        String key = "portal.favorite.groups." + tenantCode;
+        if (groups != null && !groups.isEmpty()) {
+            String groupsJson = formatFavoriteGroupsJson(groups);
+            props.setProperty(key, groupsJson);
         } else {
             props.remove(key);  // 如果列表为空，移除属性
         }
@@ -655,7 +734,139 @@ public class AppSettings {
         try (FileOutputStream fos = new FileOutputStream(file)) {
             props.store(fos, "Git Info Viewer Settings");
         } catch (IOException e) {
-            System.err.println("Error saving Portal favorites: " + e.getMessage());
+            System.err.println("Error saving Portal favorite groups: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 获取Portal未分组的收藏应用（按租户）
+     * Get Portal ungrouped favorite applications for a specific tenant
+     * 
+     * @param tenantCode 租户代码
+     * @return 未分组的应用名称列表
+     */
+    public List<String> getPortalUngroupedFavorites(String tenantCode) {
+        if (tenantCode == null || tenantCode.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        Properties props = new Properties();
+        File file = new File(System.getProperty("user.home"), SETTINGS_FILE);
+        
+        if (file.exists()) {
+            try (FileInputStream fis = new FileInputStream(file)) {
+                props.load(fis);
+                String key = "portal.ungrouped.favorites." + tenantCode;
+                String ungroupedStr = props.getProperty(key, "");
+                
+                if (ungroupedStr.isEmpty()) {
+                    return new ArrayList<>();
+                }
+                
+                // 解析逗号分隔的应用名称
+                return TenantCICDUtils.parseTenantCodes(ungroupedStr);
+            } catch (IOException e) {
+                System.err.println("Error loading Portal ungrouped favorites: " + e.getMessage());
+            }
+        }
+        
+        return new ArrayList<>();
+    }
+    
+    /**
+     * 设置Portal未分组的收藏应用（按租户）
+     * Set Portal ungrouped favorite applications for a specific tenant
+     * 
+     * @param tenantCode 租户代码
+     * @param ungroupedApps 未分组的应用名称列表
+     */
+    public void setPortalUngroupedFavorites(String tenantCode, List<String> ungroupedApps) {
+        if (tenantCode == null || tenantCode.isEmpty()) {
+            return;
+        }
+        
+        Properties props = new Properties();
+        File file = new File(System.getProperty("user.home"), SETTINGS_FILE);
+        
+        // 加载现有设置
+        if (file.exists()) {
+            try (FileInputStream fis = new FileInputStream(file)) {
+                props.load(fis);
+            } catch (IOException e) {
+                System.err.println("Error loading settings: " + e.getMessage());
+            }
+        }
+        
+        // 更新未分组列表
+        String key = "portal.ungrouped.favorites." + tenantCode;
+        if (ungroupedApps != null && !ungroupedApps.isEmpty()) {
+            String ungroupedStr = TenantCICDUtils.formatTenantCodes(ungroupedApps);
+            props.setProperty(key, ungroupedStr);
+        } else {
+            props.remove(key);  // 如果列表为空，移除属性
+        }
+        
+        // 保存设置
+        try (FileOutputStream fos = new FileOutputStream(file)) {
+            props.store(fos, "Git Info Viewer Settings");
+        } catch (IOException e) {
+            System.err.println("Error saving Portal ungrouped favorites: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 解析分组JSON字符串
+     * Parse favorite groups from JSON string
+     * 
+     * @param json JSON字符串
+     * @return 分组列表
+     */
+    private List<FavoriteGroup> parseFavoriteGroupsJson(String json) {
+        List<FavoriteGroup> groups = new ArrayList<>();
+        
+        try {
+            org.json.JSONArray jsonArray = new org.json.JSONArray(json);
+            for (int i = 0; i < jsonArray.length(); i++) {
+                org.json.JSONObject groupObj = jsonArray.getJSONObject(i);
+                String name = groupObj.getString("name");
+                boolean expanded = groupObj.optBoolean("expanded", true);
+                
+                List<String> appNames = new ArrayList<>();
+                org.json.JSONArray appsArray = groupObj.getJSONArray("appNames");
+                for (int j = 0; j < appsArray.length(); j++) {
+                    appNames.add(appsArray.getString(j));
+                }
+                
+                groups.add(new FavoriteGroup(name, appNames, expanded));
+            }
+        } catch (Exception e) {
+            System.err.println("Error parsing favorite groups JSON: " + e.getMessage());
+        }
+        
+        return groups;
+    }
+    
+    /**
+     * 格式化分组为JSON字符串
+     * Format favorite groups to JSON string
+     * 
+     * @param groups 分组列表
+     * @return JSON字符串
+     */
+    private String formatFavoriteGroupsJson(List<FavoriteGroup> groups) {
+        try {
+            org.json.JSONArray jsonArray = new org.json.JSONArray();
+            for (FavoriteGroup group : groups) {
+                org.json.JSONObject groupObj = new org.json.JSONObject();
+                groupObj.put("name", group.getName());
+                groupObj.put("expanded", group.isExpanded());
+                groupObj.put("appNames", new org.json.JSONArray(group.getAppNames()));
+                jsonArray.put(groupObj);
+            }
+            return jsonArray.toString();
+        } catch (Exception e) {
+            System.err.println("Error formatting favorite groups JSON: " + e.getMessage());
+            return "[]";
         }
     }
 }

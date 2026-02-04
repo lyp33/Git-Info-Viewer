@@ -7,6 +7,7 @@ D:\ai\project\git\src\main\java\com\gitviewer\DeploymentPodListDialog.java
 D:\ai\project\git\src\main\java\com\gitviewer\PlanBuildResult.java
 D:\ai\project\git\src\main\java\com\gitviewer\AISettingsDialog.java
 D:\ai\project\git\src\main\java\com\gitviewer\Application.java
+D:\ai\project\git\src\main\java\com\gitviewer\GroupHeaderPanel.java
 D:\ai\project\git\src\main\java\com\gitviewer\AppBuildResult.java
 D:\ai\project\git\src\main\java\com\gitviewer\PortalApiClient.java
 D:\ai\project\git\src\main\java\com\gitviewer\JenkinsBrowserDialog.java
@@ -49,6 +50,7 @@ D:\ai\project\git\src\main\java\com\gitviewer\AppSettings.java
 D:\ai\project\git\src\main\java\com\gitviewer\TokenResponse.java
 D:\ai\project\git\src\main\java\com\gitviewer\DeploymentPod.java
 D:\ai\project\git\src\main\java\com\gitviewer\JenkinsBuild.java
+D:\ai\project\git\src\main\java\com\gitviewer\FavoriteGroup.java
 D:\ai\project\git\src\main\java\com\gitviewer\GitLabApiClient.java
 D:\ai\project\git\src\main\java\com\gitviewer\BuildStatusCellRenderer.java
 D:\ai\project\git\src\main\java\com\gitviewer\PortalSettingsDialog.java
@@ -57,3 +59,4 @@ D:\ai\project\git\src\main\java\com\gitviewer\MockJenkinsServer.java
 D:\ai\project\git\src\main\java\com\gitviewer\AIService.java
 D:\ai\project\git\src\main\java\com\gitviewer\JenkinsJob.java
 D:\ai\project\git\src\main\java\com\gitviewer\JenkinsBuildParametersDialog.java
+D:\ai\project\git\src\main\java\com\gitviewer\ModernInputDialog.java

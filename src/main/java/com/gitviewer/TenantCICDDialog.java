@@ -30,7 +30,6 @@ public class TenantCICDDialog extends JDialog {
     
     // Connection Panel组件
     private JComboBox<String> tenantComboBox;
-    private JButton connectButton;
     private JLabel statusLabel;
     
     // Query Panel组件
@@ -182,31 +181,25 @@ public class TenantCICDDialog extends JDialog {
         tenantComboBox = new JComboBox<>();
         tenantComboBox.setPreferredSize(new Dimension(200, 32));
         tenantComboBox.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        // 添加租户选择监听器，自动连接
+        tenantComboBox.addActionListener(e -> {
+            String selected = (String) tenantComboBox.getSelectedItem();
+            // 只有当选择的不是 "Please select" 时才自动连接
+            if (selected != null && !selected.equals("Please select") && !selected.trim().isEmpty()) {
+                handleConnect();
+            }
+        });
         panel.add(tenantComboBox);
         
-        // Connect 按钮 - 蓝色主题
-        connectButton = new JButton("<html><font color='white'><b>Connect</b></font></html>");
-        connectButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        connectButton.setPreferredSize(new Dimension(100, 32));
-        connectButton.setBackground(new Color(66, 133, 244));
-        connectButton.setForeground(Color.WHITE);
-        connectButton.setOpaque(true);
-        connectButton.setContentAreaFilled(true);
-        connectButton.setFocusPainted(false);
-        connectButton.setBorderPainted(false);
-        connectButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        connectButton.addActionListener(e -> handleConnect());
-        panel.add(connectButton);
-        
-        statusLabel = new JLabel("Not connected");
+        statusLabel = new JLabel("Please select a tenant");
         statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         statusLabel.setForeground(new Color(95, 99, 104));
         panel.add(statusLabel);
         
-        // Build 按钮 - 紫色
-        buildButton = new JButton("<html><font color='white'><b>Build</b></font></html>");
+        // Build Image 按钮 - 紫色
+        buildButton = new JButton("<html><font color='white'><b>Build Image</b></font></html>");
         buildButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        buildButton.setPreferredSize(new Dimension(100, 32));
+        buildButton.setPreferredSize(new Dimension(120, 32));
         buildButton.setBackground(new Color(142, 68, 173));
         buildButton.setForeground(Color.WHITE);
         buildButton.setOpaque(true);
@@ -875,8 +868,9 @@ public class TenantCICDDialog extends JDialog {
         // 解析租户代码，提取主租户名称（不包含子租户）
         java.util.Map<String, List<String>> tenantMap = TenantCICDUtils.parseTenantCodesWithSubTenants(tenantCodesStr);
         
-        // 填充tenant下拉框，只显示主租户名称
+        // 填充tenant下拉框，首先添加 "Please select" 作为默认选项
         DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
+        model.addElement("Please select");  // 添加默认提示选项
         for (String mainTenant : tenantMap.keySet()) {
             model.addElement(mainTenant);  // 只添加主租户名称，例如 "stbd"
         }
@@ -900,15 +894,11 @@ public class TenantCICDDialog extends JDialog {
      * Handle connect action
      */
     private void handleConnect() {
-        logger.info("=== User Action: Connect Button Clicked ===");
+        logger.info("=== User Action: Tenant Selected - Auto Connect ===");
         
         String selectedTenant = (String) tenantComboBox.getSelectedItem();
-        if (selectedTenant == null || selectedTenant.trim().isEmpty()) {
-            logger.warn("No tenant selected");
-            JOptionPane.showMessageDialog(this,
-                "Please select a tenant",
-                "Validation Error",
-                JOptionPane.ERROR_MESSAGE);
+        if (selectedTenant == null || selectedTenant.trim().isEmpty() || selectedTenant.equals("Please select")) {
+            logger.warn("No valid tenant selected");
             return;
         }
         
@@ -943,6 +933,9 @@ public class TenantCICDDialog extends JDialog {
                         statusLabel.setText("Connected successfully to " + currentTenant);
                         statusLabel.setForeground(new Color(0, 128, 0));
                         logger.info("Connection successful, token expires in {} seconds", response.getExpireIn());
+                        
+                        // 更新窗口标题，显示当前租户
+                        setTitle("Tenant CI/CD - " + currentTenant);
                         
                         // 更新UI状态
                         updateUIState(true);
@@ -1627,7 +1620,6 @@ public class TenantCICDDialog extends JDialog {
         loadingLabel.setVisible(true);
         loadingProgressBar.setVisible(true);
         searchButton.setEnabled(false);
-        connectButton.setEnabled(false);
     }
     
     /**
@@ -1638,7 +1630,6 @@ public class TenantCICDDialog extends JDialog {
         loadingLabel.setVisible(false);
         loadingProgressBar.setVisible(false);
         searchButton.setEnabled(currentToken != null);
-        connectButton.setEnabled(true);
     }
     
     /**
@@ -1655,7 +1646,7 @@ public class TenantCICDDialog extends JDialog {
         // 强制保持按钮文字为白色（即使禁用状态）
         downloadCsvButton.setText("<html><font color='white'><b>Download CSV</b></font></html>");
         copyImageNamesButton.setText("<html><font color='white'><b>Copy Image Names</b></font></html>");
-        buildButton.setText("<html><font color='white'><b>Build</b></font></html>");
+        buildButton.setText("<html><font color='white'><b>Build Image</b></font></html>");
         deployButton.setText("<html><font color='white'><b>Deployment</b></font></html>");
         searchButton.setText("<html><font color='white'><b>Search</b></font></html>");
         
