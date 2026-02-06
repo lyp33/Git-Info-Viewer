@@ -38,6 +38,8 @@ public class TenantCICDDialog extends JDialog {
     private JTextField creatorField;
     private JTextField pageSizeField;
     private JButton searchButton;
+    private JLabel cancelSearchLink;  // 取消搜索链接
+    private JButton cancelSearchButton;  // 新增：取消搜索按钮
     
     // Results Panel组件
     private JTable resultsTable;
@@ -276,7 +278,7 @@ public class TenantCICDDialog extends JDialog {
         gbc.gridx = 0;
         gbc.gridy = 0;
         gbc.weightx = 0.0;
-        panel.add(new JLabel("Plan Name:"), gbc);
+        panel.add(new JLabel("Version Name:"), gbc);
         
         gbc.gridx = 1;
         gbc.weightx = 1.0;
@@ -350,6 +352,34 @@ public class TenantCICDDialog extends JDialog {
         searchButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         searchButton.addActionListener(e -> handleSearch());
         panel.add(searchButton, gbc);
+        
+        // Cancel Search Link (initially hidden)
+        gbc.gridx = 5;
+        gbc.weightx = 0.0;
+        gbc.insets = new Insets(5, 10, 5, 5);
+        cancelSearchLink = new JLabel("<html><u>Cancel</u></html>");
+        cancelSearchLink.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        cancelSearchLink.setForeground(new Color(220, 53, 69));  // 红色
+        cancelSearchLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        cancelSearchLink.setVisible(false);  // 默认隐藏
+        cancelSearchLink.setToolTipText("Cancel current search");
+        cancelSearchLink.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                handleCancelSearch();
+            }
+            
+            @Override
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                cancelSearchLink.setForeground(new Color(200, 35, 51));  // 深红色
+            }
+            
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                cancelSearchLink.setForeground(new Color(220, 53, 69));  // 恢复原色
+            }
+        });
+        panel.add(cancelSearchLink, gbc);
         
         return panel;
     }
@@ -1051,8 +1081,9 @@ public class TenantCICDDialog extends JDialog {
             return;
         }
         
-        // 标记开始搜索
+        // 标记开始搜索，显示取消链接
         isSearching = true;
+        cancelSearchLink.setVisible(true);
         
         // 获取查询参数
         String planName = planNameField.getText().trim();
@@ -1077,6 +1108,30 @@ public class TenantCICDDialog extends JDialog {
         } else {
             // App查询（不带app name，查询所有）
             executeQueryByApp(null, creator, pageSize, pageNumber);
+        }
+    }
+    
+    /**
+     * 处理取消搜索
+     * Handle cancel search action
+     */
+    private void handleCancelSearch() {
+        logger.info("=== User Action: Cancel Search ===");
+        
+        if (currentWorker != null && !currentWorker.isDone()) {
+            logger.info("Cancelling current search operation");
+            currentWorker.cancel(true);
+            currentWorker = null;
+            
+            // 重置状态
+            isSearching = false;
+            cancelSearchLink.setVisible(false);
+            hideLoading();
+            
+            statusLabel.setText("Search cancelled");
+            statusLabel.setForeground(new Color(255, 140, 0));  // 橙色
+            
+            logger.info("Search cancelled successfully");
         }
     }
     
@@ -1119,6 +1174,7 @@ public class TenantCICDDialog extends JDialog {
             protected void done() {
                 hideLoading();
                 isSearching = false;  // 重置搜索标志
+                cancelSearchLink.setVisible(false);  // 隐藏取消链接
                 try {
                     List<BuildResult> results = get();
                     
@@ -1176,6 +1232,7 @@ public class TenantCICDDialog extends JDialog {
             protected void done() {
                 hideLoading();
                 isSearching = false;  // 重置搜索标志
+                cancelSearchLink.setVisible(false);  // 隐藏取消链接
                 try {
                     List<BuildResult> results = get();
                     displayResults(results);
@@ -1997,8 +2054,8 @@ public class TenantCICDDialog extends JDialog {
         BuildResult buildResult = results.get(modelRow);
         String buildStatus = buildResult.getBuildStatus();
         
-        // 只有Build Fail状态才显示Rebuild选项
-        if ("Build Fail".equalsIgnoreCase(buildStatus)) {
+        // Build Fail和Build Success状态都可以Rebuild
+        if ("Build Fail".equalsIgnoreCase(buildStatus) || "Build Success".equalsIgnoreCase(buildStatus)) {
             JPopupMenu popupMenu = new JPopupMenu();
             
             JMenuItem rebuildItem = new JMenuItem("Rebuild");

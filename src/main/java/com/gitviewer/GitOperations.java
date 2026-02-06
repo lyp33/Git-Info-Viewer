@@ -38,7 +38,20 @@ public class GitOperations {
             return globalCredentialsProvider;
         }
 
-        // 如果有保存的认证信息，使用它
+        // 1. 首先检查AppSettings中是否配置了username/password
+        AppSettings settings = AppSettings.getInstance();
+        String configuredUsername = settings.getGitLabUsername();
+        String configuredPassword = settings.getGitLabPassword();
+
+        if (!configuredUsername.isEmpty() && !configuredPassword.isEmpty()) {
+            globalCredentialsProvider = new UsernamePasswordCredentialsProvider(
+                configuredUsername, 
+                configuredPassword
+            );
+            return globalCredentialsProvider;
+        }
+
+        // 2. 如果有保存的认证信息（会话期间），使用它
         if (GitCredentialsDialog.hasSavedCredentials()) {
             globalCredentialsProvider = new UsernamePasswordCredentialsProvider(
                 GitCredentialsDialog.getSavedUsername(),
@@ -47,7 +60,7 @@ public class GitOperations {
             return globalCredentialsProvider;
         }
 
-        // 显示认证对话框
+        // 3. 显示认证对话框让用户输入
         GitCredentialsDialog dialog = new GitCredentialsDialog(null, repositoryUrl);
         dialog.setVisible(true);
 

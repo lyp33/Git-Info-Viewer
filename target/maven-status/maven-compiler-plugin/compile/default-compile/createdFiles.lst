@@ -49,8 +49,10 @@ com\gitviewer\RepoDetailsDialog$2.class
 com\gitviewer\JenkinsJob.class
 com\gitviewer\InfoPanel$CommitSearchResultDialog.class
 com\gitviewer\JenkinsApiClient.class
+com\gitviewer\VersionPatternDialog$3.class
 com\gitviewer\DirectoryTreePanel$3.class
 com\gitviewer\DeploymentPodLogDialog.class
+com\gitviewer\BuildPackageDialog$18.class
 com\gitviewer\GitLabProject.class
 com\gitviewer\DeploymentPodListDialog$2.class
 com\gitviewer\GroupHeaderPanel$2.class
@@ -67,6 +69,7 @@ com\gitviewer\BatchCherryPickDialog$2.class
 com\gitviewer\FileDiffDialog$1.class
 com\gitviewer\DeploymentPodListDialog$MultiLineTableCellRenderer.class
 com\gitviewer\AIChatDialog$1.class
+com\gitviewer\VersionPatternDialog$2.class
 com\gitviewer\RepoDetailsDialog$5.class
 com\gitviewer\DeploymentDialog$3.class
 com\gitviewer\InfoPanel$CheckBoxCellEditor.class
@@ -96,6 +99,7 @@ com\gitviewer\JenkinsStageLogDialog$PortalLogInfo.class
 com\gitviewer\FileDiffDialog$DiffData.class
 com\gitviewer\AIChatDialog$2.class
 com\gitviewer\CheckoutGitProjectDialog$CheckBoxCellEditor.class
+com\gitviewer\VersionPatternDialog$1.class
 com\gitviewer\ModernInputDialog$3.class
 com\gitviewer\TestFavoritesUtil.class
 com\gitviewer\TenantCICDDialog$1.class
@@ -105,6 +109,7 @@ com\gitviewer\FileSearchDialog$FileSelectionListener.class
 com\gitviewer\BuildPackageDialog$9.class
 com\gitviewer\InfoPanel$SelectAllHeaderRenderer$1.class
 com\gitviewer\BatchCherryPickDialog.class
+com\gitviewer\TenantCICDDialog$12.class
 com\gitviewer\InfoPanel$1.class
 com\gitviewer\InfoPanel$ButtonCellRenderer.class
 com\gitviewer\BatchCherryPickDialog$CommitInfo.class
@@ -142,9 +147,11 @@ com\gitviewer\BuildPackageDialog$7.class
 com\gitviewer\GitLabSettingsDialog.class
 com\gitviewer\CheckoutGitProjectDialog$7.class
 com\gitviewer\GitCredentialsDialog$2.class
+com\gitviewer\VersionPatternGenerator.class
 com\gitviewer\JenkinsBrowserDialog$FavoriteTreeCellRenderer.class
 com\gitviewer\DirectoryTreePanel$2.class
 com\gitviewer\BranchFilterDialog.class
+com\gitviewer\VersionPatternDialog.class
 com\gitviewer\GitApiClient.class
 com\gitviewer\JenkinsBuildParametersDialog$2.class
 com\gitviewer\InfoPanel$CommitSearchResultDialog$1.class
@@ -152,6 +159,7 @@ com\gitviewer\TenantCICDDialog$4.class
 com\gitviewer\FavoritesPanel$2.class
 com\gitviewer\JenkinsBrowserDialog$2.class
 com\gitviewer\RepoDetailsDialog$NonEditableTableModel.class
+com\gitviewer\BuildPackageDialog$17.class
 com\gitviewer\GitCredentialsDialog$3.class
 com\gitviewer\JenkinsStageLogDialog$1.class
 com\gitviewer\GroupHeaderPanel$3.class

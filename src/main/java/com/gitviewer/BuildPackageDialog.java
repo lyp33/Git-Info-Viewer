@@ -36,6 +36,7 @@ public class BuildPackageDialog extends JDialog {
     // UI组件
     private JComboBox<String> branchComboBox;
     private JTextField versionCodeField;
+    private JLabel versionPatternLink;  // 版本模式配置超链接
     private JCheckBox selectAllUnfavoritedCheckbox;
     private JCheckBox selectAllFavoritedCheckbox;
     private JTextField unfavoritedFilterField;  // 过滤文本框
@@ -56,6 +57,7 @@ public class BuildPackageDialog extends JDialog {
     private List<Application> allApplications;
     private List<Application> filteredApplications;
     private List<String> favoriteAppNames;  // 收藏的应用名称（兼容旧版本）
+    private String currentVersionPattern;  // 当前租户的版本模式
     
     // 分组数据
     private List<FavoriteGroup> favoriteGroups;  // 分组列表
@@ -108,6 +110,7 @@ public class BuildPackageDialog extends JDialog {
         
         initializeUI();
         loadFavoriteApps();
+        loadVersionPattern();  // 加载版本模式
         loadTenantConfiguration();
         loadAndFilterApplications();
         
@@ -175,10 +178,40 @@ public class BuildPackageDialog extends JDialog {
         panel.setBackground(Color.WHITE);
         panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
         
+        // Title with pattern link
+        JPanel titlePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        titlePanel.setBackground(Color.WHITE);
+        
         JLabel titleLabel = new JLabel("Version Code/Plan Code");
         titleLabel.setFont(new Font("Microsoft YaHei UI", Font.BOLD, 14));
         titleLabel.setForeground(new Color(60, 64, 67));
-        panel.add(titleLabel, BorderLayout.NORTH);
+        titlePanel.add(titleLabel);
+        
+        // Pattern configuration link
+        versionPatternLink = new JLabel("<html><u>-</u></html>");
+        versionPatternLink.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 12));
+        versionPatternLink.setForeground(new Color(70, 130, 180));  // Steel blue
+        versionPatternLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        versionPatternLink.setToolTipText("Click to configure version code pattern");
+        versionPatternLink.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                handlePatternLinkClick();
+            }
+            
+            @Override
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                versionPatternLink.setForeground(new Color(50, 100, 150));  // Darker blue
+            }
+            
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                versionPatternLink.setForeground(new Color(70, 130, 180));  // Original blue
+            }
+        });
+        titlePanel.add(versionPatternLink);
+        
+        panel.add(titlePanel, BorderLayout.NORTH);
         
         versionCodeField = new JTextField();
         versionCodeField.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 14));
@@ -518,12 +551,102 @@ public class BuildPackageDialog extends JDialog {
     
     /**
      * 生成版本代码
-     * Generate version code with format: {branch}_yyyyMMddHHmmss
+     * Generate version code using configured pattern or default format
      */
     private String generateVersionCode(String branch) {
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
-        String timestamp = sdf.format(new Date());
-        return branch + "_" + timestamp;
+        try {
+            String versionCode = VersionPatternGenerator.generateVersionCode(
+                currentVersionPattern, branch, new Date());
+            logger.debug("Generated version code: {} (pattern: {}, branch: {})", 
+                        versionCode, 
+                        currentVersionPattern != null ? currentVersionPattern : "default", 
+                        branch);
+            return versionCode;
+        } catch (Exception e) {
+            logger.error("Failed to generate version code with pattern '{}' for branch '{}', falling back to default", 
+                        currentVersionPattern, branch, e);
+            // Fall back to default format on error
+            String defaultPattern = "{branch}_{YYYYMMDDHHMMSS}";
+            return VersionPatternGenerator.generateVersionCode(defaultPattern, branch, new Date());
+        }
+    }
+    
+    /**
+     * 加载版本模式
+     * Load version pattern from settings
+     */
+    private void loadVersionPattern() {
+        try {
+            AppSettings settings = AppSettings.getInstance();
+            currentVersionPattern = settings.getPortalVersionPattern(currentTenant);
+            
+            // 更新pattern link显示
+            if (currentVersionPattern == null || currentVersionPattern.trim().isEmpty()) {
+                versionPatternLink.setText("<html><u>-</u></html>");
+                logger.debug("No version pattern configured for tenant: {}", currentTenant);
+            } else {
+                versionPatternLink.setText("<html><u>" + currentVersionPattern + "</u></html>");
+                logger.info("Loaded version pattern for tenant {}: {}", currentTenant, currentVersionPattern);
+            }
+        } catch (Exception e) {
+            logger.error("Failed to load version pattern for tenant: {}", currentTenant, e);
+            currentVersionPattern = null;
+            versionPatternLink.setText("<html><u>-</u></html>");
+        }
+    }
+    
+    /**
+     * 保存版本模式
+     * Save version pattern to settings
+     */
+    private void saveVersionPattern(String pattern) {
+        AppSettings settings = AppSettings.getInstance();
+        settings.setPortalVersionPattern(currentTenant, pattern);
+        currentVersionPattern = pattern;
+        
+        // 更新pattern link显示
+        if (pattern == null || pattern.trim().isEmpty()) {
+            versionPatternLink.setText("<html><u>-</u></html>");
+        } else {
+            versionPatternLink.setText("<html><u>" + pattern + "</u></html>");
+        }
+        
+        logger.info("Saved version pattern for tenant {}: {}", currentTenant, pattern);
+    }
+    
+    /**
+     * 处理pattern link点击
+     * Handle pattern link click
+     */
+    private void handlePatternLinkClick() {
+        logger.info("=== User Action: Pattern Link Clicked ===");
+        
+        // 获取当前分支
+        String currentBranch = (String) branchComboBox.getSelectedItem();
+        if (currentBranch == null || currentBranch.trim().isEmpty()) {
+            currentBranch = "master";  // 默认分支
+        }
+        
+        // 打开配置对话框
+        VersionPatternDialog dialog = new VersionPatternDialog(
+            (Frame) SwingUtilities.getWindowAncestor(this),
+            currentVersionPattern,
+            currentBranch
+        );
+        dialog.setVisible(true);
+        
+        // 如果用户确认，保存pattern并重新生成version code
+        if (dialog.isConfirmed()) {
+            String newPattern = dialog.getPattern();
+            saveVersionPattern(newPattern);
+            
+            // 重新生成version code
+            if (currentBranch != null && !currentBranch.trim().isEmpty()) {
+                String versionCode = generateVersionCode(currentBranch);
+                versionCodeField.setText(versionCode);
+                logger.info("Regenerated version code with new pattern: {}", versionCode);
+            }
+        }
     }
     
     /**
@@ -682,6 +805,7 @@ public class BuildPackageDialog extends JDialog {
             checkbox.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 12));
             checkbox.setBackground(Color.WHITE);
             checkbox.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));  // 使用边距代替固定间距
+            checkbox.setIconTextGap(2);  // 减少checkbox图标与文字之间的间距
             
             // 添加拖拽支持（从unfavorited拖到favorited）
             setupUnfavoritedDragSupport(checkbox);
@@ -695,6 +819,9 @@ public class BuildPackageDialog extends JDialog {
         
         // 填充已收藏列表（支持分组）
         populateFavoritedListWithGroups();
+        
+        // 设置favorited面板为drop target，支持拖到空白处默认放入Ungrouped
+        setupFavoritedPanelDropTarget();
         
         // 添加右键菜单到收藏区域
         setupFavoritesContextMenu();
@@ -752,22 +879,34 @@ public class BuildPackageDialog extends JDialog {
             }
         }
         
-        // 添加未分组应用
+        // 添加未分组应用（始终显示，即使为空）
+        // 创建Ungrouped header（样式与group header一致）
+        JPanel ungroupedHeader = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 5));
+        ungroupedHeader.setBackground(new Color(245, 245, 245));
+        ungroupedHeader.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(218, 220, 224)),
+            BorderFactory.createEmptyBorder(2, 2, 2, 2)
+        ));
+        ungroupedHeader.setMaximumSize(new Dimension(Integer.MAX_VALUE, 35));
+        
+        JLabel ungroupedLabel = new JLabel("Ungrouped (" + ungroupedFavorites.size() + ")");
+        ungroupedLabel.setFont(new Font("Microsoft YaHei UI", Font.BOLD, 12));
+        ungroupedLabel.setForeground(new Color(60, 64, 67));
+        ungroupedHeader.add(ungroupedLabel);
+        
+        // 设置ungrouped header为drop target
+        setupUngroupedHeaderDropTarget(ungroupedHeader);
+        
+        favoritedAppListPanel.add(ungroupedHeader);
+        favoritedAppListPanel.add(Box.createVerticalStrut(2));
+        
+        // 添加未分组应用内容
         if (!ungroupedFavorites.isEmpty()) {
-            // 添加未分组标签（顶到左边，不缩进）
-            JLabel ungroupedLabel = new JLabel("Ungrouped (" + ungroupedFavorites.size() + ")");
-            ungroupedLabel.setFont(new Font("Microsoft YaHei UI", Font.BOLD, 11));
-            ungroupedLabel.setForeground(new Color(95, 99, 104));
-            ungroupedLabel.setBorder(BorderFactory.createEmptyBorder(5, 0, 2, 5));  // 左边距改为0
-            ungroupedLabel.setOpaque(true);
-            ungroupedLabel.setBackground(new Color(245, 245, 245));
+            JPanel ungroupedContent = new JPanel();
+            ungroupedContent.setLayout(new BoxLayout(ungroupedContent, BoxLayout.Y_AXIS));
+            ungroupedContent.setBackground(Color.WHITE);
+            ungroupedContent.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));  // 完全不缩进，与ungrouped header对齐
             
-            // 设置ungrouped标签为drop target
-            setupUngroupedLabelDropTarget(ungroupedLabel);
-            
-            favoritedAppListPanel.add(ungroupedLabel);
-            
-            // 添加未分组应用
             for (String appName : ungroupedFavorites) {
                 Application app = filteredApplications.stream()
                     .filter(a -> a.getAppName().equals(appName))
@@ -778,6 +917,8 @@ public class BuildPackageDialog extends JDialog {
                     JCheckBox checkbox = new JCheckBox(app.getAppName());
                     checkbox.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 12));
                     checkbox.setBackground(Color.WHITE);
+                    checkbox.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));  // 减少checkbox内边距
+                    checkbox.setIconTextGap(2);  // 减少checkbox图标与文字之间的间距
                     
                     // 添加拖拽支持（ungrouped区域内排序）
                     setupDragAndDropInGroup(checkbox, null);
@@ -786,10 +927,13 @@ public class BuildPackageDialog extends JDialog {
                     setupAppContextMenu(checkbox, null);
                     
                     favoritedAppCheckboxes.add(checkbox);
-                    favoritedAppListPanel.add(checkbox);
-                    favoritedAppListPanel.add(Box.createVerticalStrut(3));
+                    ungroupedContent.add(checkbox);
+                    ungroupedContent.add(Box.createVerticalStrut(3));
                 }
             }
+            
+            favoritedAppListPanel.add(ungroupedContent);
+            favoritedAppListPanel.add(Box.createVerticalStrut(5));
         }
     }
     
@@ -801,7 +945,7 @@ public class BuildPackageDialog extends JDialog {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBackground(Color.WHITE);
-        panel.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 0));  // 左侧缩进减少到10像素
+        panel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));  // 完全不缩进，与group header对齐
         
         for (String appName : group.getAppNames()) {
             Application app = filteredApplications.stream()
@@ -813,6 +957,8 @@ public class BuildPackageDialog extends JDialog {
                 JCheckBox checkbox = new JCheckBox(app.getAppName());
                 checkbox.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 12));
                 checkbox.setBackground(Color.WHITE);
+                checkbox.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));  // 减少checkbox内边距
+                checkbox.setIconTextGap(2);  // 减少checkbox图标与文字之间的间距
                 
                 // 添加拖拽支持（仅限同组内）
                 setupDragAndDropInGroup(checkbox, group);
@@ -1271,11 +1417,11 @@ public class BuildPackageDialog extends JDialog {
     }
     
     /**
-     * 设置ungrouped标签为drop target
-     * Setup ungrouped label as drop target for dragging items to ungrouped
+     * 设置ungrouped header为drop target
+     * Setup ungrouped header as drop target for dragging items to ungrouped
      */
-    private void setupUngroupedLabelDropTarget(JLabel ungroupedLabel) {
-        ungroupedLabel.setDropTarget(new DropTarget(ungroupedLabel, new DropTargetAdapter() {
+    private void setupUngroupedHeaderDropTarget(JPanel ungroupedHeader) {
+        ungroupedHeader.setDropTarget(new DropTarget(ungroupedHeader, new DropTargetAdapter() {
             @Override
             public void drop(DropTargetDropEvent dtde) {
                 try {
@@ -1340,13 +1486,64 @@ public class BuildPackageDialog extends JDialog {
             @Override
             public void dragEnter(DropTargetDragEvent dtde) {
                 // 添加视觉反馈
-                ungroupedLabel.setBackground(new Color(220, 235, 255));
+                ungroupedHeader.setBackground(new Color(220, 235, 255));
             }
             
             @Override
             public void dragExit(DropTargetEvent dte) {
                 // 恢复原始背景色
-                ungroupedLabel.setBackground(new Color(245, 245, 245));
+                ungroupedHeader.setBackground(new Color(245, 245, 245));
+            }
+        }));
+    }
+    
+    /**
+     * 设置favorited面板为drop target
+     * Setup favorited panel as drop target to add items to ungrouped when dropped on empty space
+     */
+    private void setupFavoritedPanelDropTarget() {
+        favoritedAppListPanel.setDropTarget(new DropTarget(favoritedAppListPanel, new DropTargetAdapter() {
+            @Override
+            public void drop(DropTargetDropEvent dtde) {
+                try {
+                    // 只处理来自unfavorited的拖拽（draggedIndex == -2）
+                    if (draggedCheckbox != null && draggedIndex == -2) {
+                        String draggedAppName = draggedCheckbox.getText();
+                        
+                        logger.info("Dropping '{}' onto favorited panel empty space, adding to Ungrouped", 
+                                   draggedAppName);
+                        
+                        // 添加到favorites和ungrouped
+                        favoriteAppNames.add(draggedAppName);
+                        ungroupedFavorites.add(draggedAppName);
+                        
+                        // 保存并刷新
+                        saveFavoriteApps();
+                        populateApplicationList();
+                        
+                        logger.info("Drop onto empty space complete, added to Ungrouped");
+                        
+                        draggedCheckbox = null;
+                        draggedIndex = -1;
+                        draggedSourceGroup = null;
+                    }
+                    
+                    dtde.acceptDrop(DnDConstants.ACTION_MOVE);
+                    dtde.dropComplete(true);
+                } catch (Exception e) {
+                    logger.error("Error during drop onto favorited panel", e);
+                    dtde.rejectDrop();
+                }
+            }
+            
+            @Override
+            public void dragOver(DropTargetDragEvent dtde) {
+                // 只接受来自unfavorited的拖拽
+                if (draggedCheckbox != null && draggedIndex == -2) {
+                    dtde.acceptDrag(DnDConstants.ACTION_MOVE);
+                } else {
+                    dtde.rejectDrag();
+                }
             }
         }));
     }

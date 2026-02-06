@@ -65,8 +65,8 @@ public class CheckoutGitProjectDialog extends JDialog {
 
     private void initializeUI() {
         setLayout(new BorderLayout(10, 10));
-        setSize(650, 600);  // 增加高度以容纳项目列表
-        setResizable(false);
+        setSize(650, 700);  // 增加高度以容纳项目列表
+        setResizable(true);  // 允许调整大小
 
         // 主面板
         JPanel mainPanel = new JPanel();
@@ -230,7 +230,7 @@ public class CheckoutGitProjectDialog extends JDialog {
                 .setCellEditor(new CheckBoxCellEditor());
 
         JScrollPane projectsScroll = new JScrollPane(projectsTable);
-        projectsScroll.setPreferredSize(new Dimension(Integer.MAX_VALUE, 150));
+        // 移除固定高度限制，让它可以随窗口大小调整
         projectsScroll.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1));
 
         projectsListPanel.add(projectsCountLabel, BorderLayout.NORTH);

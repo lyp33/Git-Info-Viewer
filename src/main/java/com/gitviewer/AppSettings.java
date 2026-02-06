@@ -869,4 +869,76 @@ public class AppSettings {
             return "[]";
         }
     }
+    
+    /**
+     * 获取租户的版本代码模式
+     * Get version code pattern for tenant
+     * 
+     * @param tenantCode 租户代码
+     * @return 版本代码模式，如果未配置则返回空字符串
+     */
+    public String getPortalVersionPattern(String tenantCode) {
+        if (tenantCode == null || tenantCode.isEmpty()) {
+            return "";
+        }
+        
+        Properties props = new Properties();
+        File file = new File(System.getProperty("user.home"), SETTINGS_FILE);
+        
+        if (file.exists()) {
+            try (FileInputStream fis = new FileInputStream(file)) {
+                props.load(fis);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        
+        String key = "portal.tenant." + tenantCode + ".versionPattern";
+        return props.getProperty(key, "");
+    }
+    
+    /**
+     * 设置租户的版本代码模式
+     * Set version code pattern for tenant
+     * 
+     * @param tenantCode 租户代码
+     * @param pattern 版本代码模式（null或空字符串表示删除配置）
+     */
+    public void setPortalVersionPattern(String tenantCode, String pattern) {
+        if (tenantCode == null || tenantCode.isEmpty()) {
+            return;
+        }
+        
+        Properties props = new Properties();
+        File file = new File(System.getProperty("user.home"), SETTINGS_FILE);
+        
+        // 先加载现有配置
+        if (file.exists()) {
+            try (FileInputStream fis = new FileInputStream(file)) {
+                props.load(fis);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        
+        String key = "portal.tenant." + tenantCode + ".versionPattern";
+        
+        if (pattern == null || pattern.trim().isEmpty()) {
+            // 删除配置
+            props.remove(key);
+            System.out.println("Removed version pattern for tenant: " + tenantCode);
+        } else {
+            // 保存配置
+            props.setProperty(key, pattern.trim());
+            System.out.println("Saved version pattern for tenant " + tenantCode + ": " + pattern.trim());
+        }
+        
+        // 保存到文件
+        try (FileOutputStream fos = new FileOutputStream(file)) {
+            props.store(fos, "Git Viewer Settings");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
 }
+
