@@ -64,6 +64,8 @@ public class TenantCICDDialog extends JDialog {
     private List<String> filteredAppNames;  // 过滤后的应用名称
     private List<BuildResult> allResults;  // 存储所有查询结果
     private String currentBranchFilter;  // 当前的分支过滤器
+    private String currentVersionFilter;  // 当前的版本过滤器
+    private String currentImageNameFilter;  // 当前的镜像名称过滤器
     
     // SwingWorker引用，用于取消操作
     private SwingWorker<?, ?> currentWorker;
@@ -397,6 +399,7 @@ public class TenantCICDDialog extends JDialog {
         
         // 创建表格
         resultsTable = new JTable(tableModel);
+        // 启用自动排序
         resultsTable.setAutoCreateRowSorter(true);
         resultsTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         resultsTable.setRowHeight(28);
@@ -429,8 +432,8 @@ public class TenantCICDDialog extends JDialog {
         // 注意：由于添加了复选框列，Build Status现在是第4列（索引3）
         resultsTable.getColumnModel().getColumn(3).setCellRenderer(new BuildStatusCellRenderer());
         
-        // 为Git Branch列添加过滤图标
-        addBranchFilterIcon();
+        // 为列添加过滤图标
+        addColumnFilterIcons();
         
         // 添加 Ctrl+C 复制功能
         resultsTable.addKeyListener(new KeyAdapter() {
@@ -1253,15 +1256,67 @@ public class TenantCICDDialog extends JDialog {
     }
 
     /**
-     * 添加分支过滤图标到表头
-     * Add branch filter icon to table header
+     * 添加列过滤图标到表头
+     * Add filter icons to table headers
      */
-    private void addBranchFilterIcon() {
-        // 获取Git Branch列的表头（第6列，索引为6）
-        TableColumn branchColumn = resultsTable.getColumnModel().getColumn(6);
+    private void addColumnFilterIcons() {
+        // Image Name列（第2列，索引为2）
+        addFilterIconToColumn(2, "Image Name");
+        
+        // Version列（第5列，索引为5）
+        addFilterIconToColumn(5, "Version");
+        
+        // Git Branch列（第6列，索引为6）
+        addFilterIconToColumn(6, "Git Branch");
+        
+        // 添加鼠标监听器到表头，处理点击事件
+        // 使用右键点击来触发过滤，避免与排序冲突
+        resultsTable.getTableHeader().addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                handleHeaderClick(e);
+            }
+        });
+    }
+    
+    /**
+     * 处理表头点击事件
+     * Handle header click event
+     */
+    private void handleHeaderClick(java.awt.event.MouseEvent e) {
+        // 只处理右键点击
+        if (!SwingUtilities.isRightMouseButton(e)) {
+            return;
+        }
+        
+        int column = resultsTable.getTableHeader().columnAtPoint(e.getPoint());
+        
+        logger.debug("Header right-clicked on column: {}", column);
+        
+        // 只处理有过滤功能的列：Image Name(2), Version(5), Git Branch(6)
+        if (column == 2 || column == 5 || column == 6) {
+            // 处理过滤
+            SwingUtilities.invokeLater(() -> {
+                if (column == 2) {  // Image Name列
+                    handleImageNameFilter();
+                } else if (column == 5) {  // Version列
+                    handleVersionFilter();
+                } else if (column == 6) {  // Git Branch列
+                    handleBranchFilter();
+                }
+            });
+        }
+    }
+    
+    /**
+     * 为指定列添加过滤图标
+     * Add filter icon to specified column
+     */
+    private void addFilterIconToColumn(int columnIndex, String columnName) {
+        TableColumn column = resultsTable.getColumnModel().getColumn(columnIndex);
         
         // 创建带图标的表头渲染器
-        branchColumn.setHeaderRenderer((table, value, isSelected, hasFocus, row, column) -> {
+        column.setHeaderRenderer((table, value, isSelected, hasFocus, row, col) -> {
             JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
             headerPanel.setBackground(new Color(248, 249, 250));
             headerPanel.setBorder(BorderFactory.createEmptyBorder(0, 5, 0, 5));
@@ -1271,13 +1326,23 @@ public class TenantCICDDialog extends JDialog {
             textLabel.setForeground(new Color(60, 64, 67));
             headerPanel.add(textLabel);
             
-            // 创建过滤图标标签（使用文本而不是emoji）
+            // 创建过滤图标标签
             JLabel filterIcon = new JLabel("[F]");
             filterIcon.setFont(new Font("Segoe UI", Font.BOLD, 10));
-            filterIcon.setToolTipText("Filter by branch");
+            filterIcon.setToolTipText("Right-click column header to filter");
             
-            // 如果当前有过滤器，显示不同的颜色
-            if (currentBranchFilter != null) {
+            // 根据当前过滤器状态决定颜色
+            String filter = null;
+            if (columnIndex == 2) {
+                filter = currentImageNameFilter;
+            } else if (columnIndex == 5) {
+                filter = currentVersionFilter;
+            } else if (columnIndex == 6) {
+                filter = currentBranchFilter;
+            }
+            
+            // 如果当前有过滤器，显示蓝色，否则灰色
+            if (filter != null && !filter.isEmpty()) {
                 filterIcon.setForeground(new Color(70, 130, 180));  // 蓝色
             } else {
                 filterIcon.setForeground(new Color(95, 99, 104));   // 灰色
@@ -1286,23 +1351,6 @@ public class TenantCICDDialog extends JDialog {
             headerPanel.add(filterIcon);
             
             return headerPanel;
-        });
-        
-        // 添加鼠标监听器到表头，处理点击事件
-        resultsTable.getTableHeader().addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override
-            public void mouseClicked(java.awt.event.MouseEvent e) {
-                int column = resultsTable.getTableHeader().columnAtPoint(e.getPoint());
-                if (column == 6) {  // Git Branch列（第6列，索引为6）
-                    // 检查点击位置是否在图标区域
-                    Rectangle headerRect = resultsTable.getTableHeader().getHeaderRect(column);
-                    int iconX = headerRect.x + headerRect.width - 30;  // 图标大约在右侧30像素内
-                    
-                    if (e.getX() >= iconX) {
-                        handleBranchFilter();
-                    }
-                }
-            }
         });
     }
     
@@ -1341,7 +1389,7 @@ public class TenantCICDDialog extends JDialog {
             logger.info("User selected branch filter: {}", selectedBranch);
             
             currentBranchFilter = selectedBranch;
-            applyBranchFilter();
+            applyFilters();
             
             // 刷新表头以更新图标颜色
             resultsTable.getTableHeader().repaint();
@@ -1351,27 +1399,123 @@ public class TenantCICDDialog extends JDialog {
     }
     
     /**
-     * 应用分支过滤
-     * Apply branch filter to results
+     * 处理版本过滤
+     * Handle version filter action
      */
-    private void applyBranchFilter() {
-        logger.info("=== Applying Branch Filter ===");
-        logger.info("Filter: {}", currentBranchFilter);
+    private void handleVersionFilter() {
+        logger.info("=== User Action: Version Filter Icon Clicked ===");
+        
+        if (allResults.isEmpty()) {
+            logger.warn("No results available for filtering");
+            JOptionPane.showMessageDialog(this,
+                "No results available for filtering.\nPlease perform a search first.",
+                "No Data",
+                JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        
+        logger.info("Opening version filter dialog");
+        
+        // 显示过滤对话框
+        TextFilterDialog filterDialog = new TextFilterDialog(this, "Version", currentVersionFilter);
+        filterDialog.setVisible(true);
+        
+        if (filterDialog.isConfirmed()) {
+            String filterText = filterDialog.getFilterText();
+            logger.info("User selected version filter: {}", filterText);
+            
+            currentVersionFilter = filterText;
+            applyFilters();
+            
+            // 刷新表头以更新图标颜色
+            resultsTable.getTableHeader().repaint();
+        } else {
+            logger.info("User cancelled version filter");
+        }
+    }
+    
+    /**
+     * 处理镜像名称过滤
+     * Handle image name filter action
+     */
+    private void handleImageNameFilter() {
+        logger.info("=== User Action: Image Name Filter Icon Clicked ===");
+        
+        if (allResults.isEmpty()) {
+            logger.warn("No results available for filtering");
+            JOptionPane.showMessageDialog(this,
+                "No results available for filtering.\nPlease perform a search first.",
+                "No Data",
+                JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        
+        logger.info("Opening image name filter dialog");
+        
+        // 显示过滤对话框
+        TextFilterDialog filterDialog = new TextFilterDialog(this, "Image Name", currentImageNameFilter);
+        filterDialog.setVisible(true);
+        
+        if (filterDialog.isConfirmed()) {
+            String filterText = filterDialog.getFilterText();
+            logger.info("User selected image name filter: {}", filterText);
+            
+            currentImageNameFilter = filterText;
+            applyFilters();
+            
+            // 刷新表头以更新图标颜色
+            resultsTable.getTableHeader().repaint();
+        } else {
+            logger.info("User cancelled image name filter");
+        }
+    }
+    
+    /**
+     * 应用所有过滤器
+     * Apply all filters to results
+     */
+    private void applyFilters() {
+        logger.info("=== Applying Filters ===");
+        logger.info("Branch Filter: {}", currentBranchFilter);
+        logger.info("Version Filter: {}", currentVersionFilter);
+        logger.info("Image Name Filter: {}", currentImageNameFilter);
         logger.info("Total results: {}", allResults.size());
         
-        List<BuildResult> filteredResults;
+        List<BuildResult> filteredResults = new ArrayList<>(allResults);
         
-        if (currentBranchFilter == null || currentBranchFilter.isEmpty()) {
-            // 没有过滤器，显示所有结果
-            filteredResults = new ArrayList<>(allResults);
-            logger.info("No filter applied, showing all {} results", filteredResults.size());
-        } else {
-            // 应用过滤器
-            filteredResults = allResults.stream()
+        // 应用分支过滤器
+        if (currentBranchFilter != null && !currentBranchFilter.isEmpty()) {
+            filteredResults = filteredResults.stream()
                 .filter(result -> currentBranchFilter.equals(result.getGitBranch()))
                 .collect(Collectors.toList());
-            logger.info("Filter applied, showing {} of {} results", filteredResults.size(), allResults.size());
+            logger.info("After branch filter: {} results", filteredResults.size());
         }
+        
+        // 应用版本过滤器（模糊匹配，不区分大小写）
+        if (currentVersionFilter != null && !currentVersionFilter.isEmpty()) {
+            String lowerFilter = currentVersionFilter.toLowerCase();
+            filteredResults = filteredResults.stream()
+                .filter(result -> {
+                    String version = result.getVersion();
+                    return version != null && version.toLowerCase().contains(lowerFilter);
+                })
+                .collect(Collectors.toList());
+            logger.info("After version filter: {} results", filteredResults.size());
+        }
+        
+        // 应用镜像名称过滤器（模糊匹配，不区分大小写）
+        if (currentImageNameFilter != null && !currentImageNameFilter.isEmpty()) {
+            String lowerFilter = currentImageNameFilter.toLowerCase();
+            filteredResults = filteredResults.stream()
+                .filter(result -> {
+                    String imageName = result.getImageName();
+                    return imageName != null && imageName.toLowerCase().contains(lowerFilter);
+                })
+                .collect(Collectors.toList());
+            logger.info("After image name filter: {} results", filteredResults.size());
+        }
+        
+        logger.info("Final filtered results: {}", filteredResults.size());
         
         // 更新表格
         tableModel.setResults(filteredResults);
@@ -1383,14 +1527,28 @@ public class TenantCICDDialog extends JDialog {
         
         // 更新状态标签
         if (hasResults) {
-            String statusText = filteredResults.size() + " results displayed";
+            StringBuilder statusText = new StringBuilder(filteredResults.size() + " results displayed");
+            
+            // 显示活动的过滤器
+            List<String> activeFilters = new ArrayList<>();
             if (currentBranchFilter != null) {
-                statusText += " (filtered by branch: " + currentBranchFilter + ")";
+                activeFilters.add("branch: " + currentBranchFilter);
             }
-            statusLabel.setText(statusText);
+            if (currentVersionFilter != null) {
+                activeFilters.add("version: " + currentVersionFilter);
+            }
+            if (currentImageNameFilter != null) {
+                activeFilters.add("image: " + currentImageNameFilter);
+            }
+            
+            if (!activeFilters.isEmpty()) {
+                statusText.append(" (filtered by ").append(String.join(", ", activeFilters)).append(")");
+            }
+            
+            statusLabel.setText(statusText.toString());
             statusLabel.setForeground(new Color(0, 128, 0));
         } else {
-            statusLabel.setText("No results match the filter");
+            statusLabel.setText("No results match the filters");
             statusLabel.setForeground(Color.GRAY);
         }
     }

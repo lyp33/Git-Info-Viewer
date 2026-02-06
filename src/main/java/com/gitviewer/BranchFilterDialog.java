@@ -55,9 +55,9 @@ public class BranchFilterDialog extends JDialog {
         
         initializeUI();
         
-        setSize(400, 180);
+        setSize(500, 200);
         setLocationRelativeTo(parent);
-        setResizable(false);
+        setResizable(true);
     }
     
     /**
