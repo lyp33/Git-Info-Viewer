@@ -693,6 +693,11 @@ public class GitLabApiClient {
      */
     public static String executeGet(String url, String token) throws IOException {
         System.out.println("[GitLab API] GET Request: " + url);
+        System.out.println("[GitLab API] Token present: " + (token != null && !token.isEmpty()));
+        if (token != null && !token.isEmpty()) {
+            System.out.println("[GitLab API] Token length: " + token.length());
+            System.out.println("[GitLab API] Token prefix: " + token.substring(0, Math.min(5, token.length())) + "...");
+        }
         
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         
@@ -710,12 +715,31 @@ public class GitLabApiClient {
             System.out.println("[GitLab API] Response Code: " + responseCode);
             
             if (responseCode == 401) {
+                System.err.println("[GitLab API] ERROR: Authentication failed - Token may be invalid or expired");
                 throw new IOException("GitLab authentication failed. Please check your token.");
             } else if (responseCode == 403) {
+                System.err.println("[GitLab API] ERROR: Access forbidden - Token may not have permission to access this resource");
                 throw new IOException("GitLab API access forbidden.");
             } else if (responseCode == 404) {
+                System.err.println("[GitLab API] ERROR: Resource not found - Project path may be incorrect");
+                System.err.println("[GitLab API] URL: " + url);
+                
+                // 尝试读取错误响应
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8))) {
+                    StringBuilder errorResponse = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        errorResponse.append(line);
+                    }
+                    System.err.println("[GitLab API] Error response: " + errorResponse.toString());
+                } catch (Exception e) {
+                    // Ignore error reading error stream
+                }
+                
                 throw new IOException("GitLab resource not found.");
             } else if (responseCode != 200) {
+                System.err.println("[GitLab API] ERROR: Unexpected response code: " + responseCode);
                 throw new IOException("GitLab API error: " + responseCode);
             }
             
@@ -725,7 +749,7 @@ public class GitLabApiClient {
                 StringBuilder response = new StringBuilder();
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    response.append(line);
+                    response.append(line).append("\n");  // 添加换行符
                 }
                 return response.toString();
             }

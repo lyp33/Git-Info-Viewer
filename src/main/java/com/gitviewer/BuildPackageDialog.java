@@ -75,8 +75,9 @@ public class BuildPackageDialog extends JDialog {
     // KeyListener引用，用于清理
     private KeyAdapter branchKeyListener;
     
-    // 拖拽相关
+    // 拖拽相关（支持多选批量拖拽）
     private JCheckBox draggedCheckbox;
+    private List<String> draggedAppNames = new ArrayList<>();  // 批量拖拽的应用名称列表
     private int draggedIndex = -1;
     private FavoriteGroup draggedSourceGroup;  // 拖拽源分组（null表示ungrouped）
     
@@ -733,9 +734,22 @@ public class BuildPackageDialog extends JDialog {
     private void loadFavoriteApps() {
         AppSettings settings = AppSettings.getInstance();
         
+        logger.info("========== Loading Favorite Apps ==========");
+        logger.info("Tenant: {}", currentTenant);
+        
         // 加载分组数据
         favoriteGroups = settings.getPortalFavoriteGroups(currentTenant);
         ungroupedFavorites = settings.getPortalUngroupedFavorites(currentTenant);
+        
+        logger.info("Loaded groups count: {}", favoriteGroups.size());
+        logger.info("Loaded ungrouped count: {}", ungroupedFavorites.size());
+        
+        // 打印每个group的详细信息
+        for (int i = 0; i < favoriteGroups.size(); i++) {
+            FavoriteGroup group = favoriteGroups.get(i);
+            logger.info("  Group {}: name='{}', apps={}", i, group.getName(), group.getAppNames());
+        }
+        logger.info("  Ungrouped: {}", ungroupedFavorites);
         
         // 如果没有分组数据，尝试从旧格式迁移
         if (favoriteGroups.isEmpty() && ungroupedFavorites.isEmpty()) {
@@ -754,8 +768,8 @@ public class BuildPackageDialog extends JDialog {
         }
         favoriteAppNames.addAll(ungroupedFavorites);
         
-        logger.info("Loaded {} groups and {} ungrouped favorites for tenant {}", 
-                   favoriteGroups.size(), ungroupedFavorites.size(), currentTenant);
+        logger.info("Total favorite apps: {}", favoriteAppNames.size());
+        logger.info("==========================================");
     }
     
     /**
@@ -764,6 +778,18 @@ public class BuildPackageDialog extends JDialog {
      */
     private void saveFavoriteApps() {
         AppSettings settings = AppSettings.getInstance();
+        
+        logger.info("========== Saving Favorite Apps ==========");
+        logger.info("Tenant: {}", currentTenant);
+        logger.info("Groups count: {}", favoriteGroups.size());
+        logger.info("Ungrouped count: {}", ungroupedFavorites.size());
+        
+        // 打印每个group的详细信息
+        for (int i = 0; i < favoriteGroups.size(); i++) {
+            FavoriteGroup group = favoriteGroups.get(i);
+            logger.info("  Group {}: name='{}', apps={}", i, group.getName(), group.getAppNames());
+        }
+        logger.info("  Ungrouped: {}", ungroupedFavorites);
         
         // 保存分组数据
         settings.setPortalFavoriteGroups(currentTenant, favoriteGroups);
@@ -778,6 +804,7 @@ public class BuildPackageDialog extends JDialog {
         
         logger.info("Saved {} groups and {} ungrouped favorites for tenant {}", 
                    favoriteGroups.size(), ungroupedFavorites.size(), currentTenant);
+        logger.info("==========================================");
     }
     
     /**
@@ -1000,6 +1027,9 @@ public class BuildPackageDialog extends JDialog {
         // 保存状态并刷新UI
         saveFavoriteApps();
         populateApplicationList();
+        
+        // 重新应用过滤器
+        filterUnfavoritedApps();
     }
     
     /**
@@ -1027,6 +1057,9 @@ public class BuildPackageDialog extends JDialog {
         saveFavoriteApps();
         populateApplicationList();
         
+        // 重新应用过滤器
+        filterUnfavoritedApps();
+        
         logger.info("Group renamed successfully");
     }
     
@@ -1046,6 +1079,9 @@ public class BuildPackageDialog extends JDialog {
         // 保存并刷新UI
         saveFavoriteApps();
         populateApplicationList();
+        
+        // 重新应用过滤器
+        filterUnfavoritedApps();
         
         logger.info("Group deleted, {} apps moved to ungrouped", group.getAppNames().size());
     }
@@ -1123,6 +1159,9 @@ public class BuildPackageDialog extends JDialog {
         // 保存并刷新UI
         saveFavoriteApps();
         populateApplicationList();
+        
+        // 重新应用过滤器
+        filterUnfavoritedApps();
     }
     
     /**
@@ -1218,6 +1257,9 @@ public class BuildPackageDialog extends JDialog {
         // 保存并刷新UI
         saveFavoriteApps();
         populateApplicationList();
+        
+        // 重新应用过滤器
+        filterUnfavoritedApps();
     }
     
     /**
@@ -1235,8 +1277,26 @@ public class BuildPackageDialog extends JDialog {
                 if (e.getButton() == MouseEvent.BUTTON1) {
                     draggedCheckbox = checkbox;
                     draggedSourceGroup = null;  // 标记为来自unfavorited
-                    draggedIndex = -2;  // 使用-2标记来自unfavorited（区别于favorited的-1）
-                    logger.debug("Drag started from unfavorited: {}", checkbox.getText());
+                    draggedIndex = -2;  // 使用-2标记来自unfavorited
+                    
+                    // 收集所有已勾选的应用（批量拖拽）
+                    draggedAppNames.clear();
+                    for (JCheckBox cb : unfavoritedAppCheckboxes) {
+                        if (cb.isSelected()) {
+                            draggedAppNames.add(cb.getText());
+                        }
+                    }
+                    // 如果没有勾选任何项，则只拖拽当前项
+                    if (draggedAppNames.isEmpty()) {
+                        draggedAppNames.add(checkbox.getText());
+                    }
+                    // 确保当前拖拽的项也在列表中
+                    if (!draggedAppNames.contains(checkbox.getText())) {
+                        draggedAppNames.add(checkbox.getText());
+                    }
+                    
+                    logger.debug("Drag started from unfavorited: {} items ({})", 
+                               draggedAppNames.size(), draggedAppNames);
                 }
             }
         });
@@ -1263,36 +1323,35 @@ public class BuildPackageDialog extends JDialog {
             public void drop(DropTargetDropEvent dtde) {
                 try {
                     // 只处理来自favorited的拖拽（draggedIndex >= 0）
-                    if (draggedCheckbox != null && draggedIndex >= 0) {
-                        String draggedAppName = draggedCheckbox.getText();
+                    if (draggedCheckbox != null && draggedIndex >= 0 && !draggedAppNames.isEmpty()) {
+                        logger.info("Batch dropping {} items onto unfavorited panel", draggedAppNames.size());
                         
-                        logger.info("Dropping '{}' onto unfavorited panel from {}", 
-                                   draggedAppName,
-                                   draggedSourceGroup != null ? draggedSourceGroup.getName() : "Ungrouped");
-                        
-                        // 从favorites移除
-                        favoriteAppNames.remove(draggedAppName);
-                        
-                        // 从源位置移除
-                        if (draggedSourceGroup != null) {
-                            draggedSourceGroup.removeApp(draggedAppName);
-                            if (draggedSourceGroup.isEmpty()) {
-                                favoriteGroups.remove(draggedSourceGroup);
-                                logger.info("Removed empty group: {}", draggedSourceGroup.getName());
+                        for (String appName : draggedAppNames) {
+                            favoriteAppNames.remove(appName);
+                            
+                            // 从所有分组中移除
+                            for (int i = favoriteGroups.size() - 1; i >= 0; i--) {
+                                FavoriteGroup g = favoriteGroups.get(i);
+                                g.removeApp(appName);
+                                if (g.isEmpty()) {
+                                    favoriteGroups.remove(i);
+                                    logger.info("Removed empty group: {}", g.getName());
+                                }
                             }
-                        } else {
-                            ungroupedFavorites.remove(draggedAppName);
+                            ungroupedFavorites.remove(appName);
                         }
                         
                         // 保存并刷新
                         saveFavoriteApps();
                         populateApplicationList();
+                        filterUnfavoritedApps();
                         
-                        logger.info("Unfavorite complete");
+                        logger.info("Batch unfavorite complete: {} items", draggedAppNames.size());
                         
                         draggedCheckbox = null;
                         draggedIndex = -1;
                         draggedSourceGroup = null;
+                        draggedAppNames.clear();
                     }
                     
                     dtde.acceptDrop(DnDConstants.ACTION_MOVE);
@@ -1338,55 +1397,54 @@ public class BuildPackageDialog extends JDialog {
             @Override
             public void drop(DropTargetDropEvent dtde) {
                 try {
-                    if (draggedCheckbox != null) {
-                        String draggedAppName = draggedCheckbox.getText();
-                        
-                        // 来自unfavorited的拖拽（draggedIndex == -2）
+                    if (draggedCheckbox != null && !draggedAppNames.isEmpty()) {
+                        // 来自unfavorited的批量拖拽（draggedIndex == -2）
                         if (draggedIndex == -2) {
-                            logger.info("Dropping '{}' from unfavorited onto group header '{}'", 
-                                       draggedAppName, targetGroup.getName());
+                            logger.info("Batch dropping {} items from unfavorited onto group '{}'", 
+                                       draggedAppNames.size(), targetGroup.getName());
                             
-                            // 添加到favorites和目标group
-                            favoriteAppNames.add(draggedAppName);
-                            targetGroup.addApp(draggedAppName);
-                            
-                            // 保存并刷新
-                            saveFavoriteApps();
-                            populateApplicationList();
-                            
-                            logger.info("Drop from unfavorited to group complete");
-                        }
-                        // 来自favorited的拖拽（draggedIndex >= 0）
-                        else if (draggedIndex >= 0 && draggedSourceGroup != targetGroup) {
-                            logger.info("Dropping '{}' onto group header '{}' from {}", 
-                                       draggedAppName,
-                                       targetGroup.getName(),
-                                       draggedSourceGroup != null ? draggedSourceGroup.getName() : "Ungrouped");
-                            
-                            // 从源位置移除
-                            if (draggedSourceGroup != null) {
-                                draggedSourceGroup.removeApp(draggedAppName);
-                                if (draggedSourceGroup.isEmpty()) {
-                                    favoriteGroups.remove(draggedSourceGroup);
-                                    logger.info("Removed empty group: {}", draggedSourceGroup.getName());
+                            for (String appName : draggedAppNames) {
+                                if (!favoriteAppNames.contains(appName)) {
+                                    favoriteAppNames.add(appName);
                                 }
-                            } else {
-                                ungroupedFavorites.remove(draggedAppName);
+                                targetGroup.addApp(appName);
                             }
-                            
-                            // 添加到目标group的末尾
-                            targetGroup.addApp(draggedAppName);
-                            
-                            // 保存并刷新
-                            saveFavoriteApps();
-                            populateApplicationList();
-                            
-                            logger.info("Drop onto group header complete");
                         }
+                        // 来自favorited的批量拖拽（draggedIndex >= 0）
+                        else if (draggedIndex >= 0) {
+                            logger.info("Batch dropping {} items onto group '{}' from favorited", 
+                                       draggedAppNames.size(), targetGroup.getName());
+                            
+                            for (String appName : draggedAppNames) {
+                                // 从所有分组中移除
+                                for (int i = favoriteGroups.size() - 1; i >= 0; i--) {
+                                    FavoriteGroup g = favoriteGroups.get(i);
+                                    if (g != targetGroup) {
+                                        g.removeApp(appName);
+                                        if (g.isEmpty()) {
+                                            favoriteGroups.remove(i);
+                                            logger.info("Removed empty group: {}", g.getName());
+                                        }
+                                    }
+                                }
+                                ungroupedFavorites.remove(appName);
+                                
+                                // 添加到目标group（如果还不在里面）
+                                if (!targetGroup.containsApp(appName)) {
+                                    targetGroup.addApp(appName);
+                                }
+                            }
+                        }
+                        
+                        // 保存并刷新
+                        saveFavoriteApps();
+                        populateApplicationList();
+                        filterUnfavoritedApps();
                         
                         draggedCheckbox = null;
                         draggedIndex = -1;
                         draggedSourceGroup = null;
+                        draggedAppNames.clear();
                     }
                     
                     dtde.acceptDrop(DnDConstants.ACTION_MOVE);
@@ -1425,49 +1483,50 @@ public class BuildPackageDialog extends JDialog {
             @Override
             public void drop(DropTargetDropEvent dtde) {
                 try {
-                    if (draggedCheckbox != null) {
-                        String draggedAppName = draggedCheckbox.getText();
-                        
-                        // 来自unfavorited的拖拽（draggedIndex == -2）
+                    if (draggedCheckbox != null && !draggedAppNames.isEmpty()) {
+                        // 来自unfavorited的批量拖拽
                         if (draggedIndex == -2) {
-                            logger.info("Dropping '{}' from unfavorited onto Ungrouped", draggedAppName);
+                            logger.info("Batch dropping {} items from unfavorited onto Ungrouped", draggedAppNames.size());
                             
-                            // 添加到favorites和ungrouped
-                            favoriteAppNames.add(draggedAppName);
-                            ungroupedFavorites.add(draggedAppName);
-                            
-                            // 保存并刷新
-                            saveFavoriteApps();
-                            populateApplicationList();
-                            
-                            logger.info("Drop from unfavorited to ungrouped complete");
-                        }
-                        // 来自favorited group的拖拽（draggedIndex >= 0）
-                        else if (draggedIndex >= 0 && draggedSourceGroup != null) {
-                            logger.info("Dropping '{}' onto Ungrouped from group '{}'", 
-                                       draggedAppName,
-                                       draggedSourceGroup.getName());
-                            
-                            // 从源分组移除
-                            draggedSourceGroup.removeApp(draggedAppName);
-                            if (draggedSourceGroup.isEmpty()) {
-                                favoriteGroups.remove(draggedSourceGroup);
-                                logger.info("Removed empty group: {}", draggedSourceGroup.getName());
+                            for (String appName : draggedAppNames) {
+                                if (!favoriteAppNames.contains(appName)) {
+                                    favoriteAppNames.add(appName);
+                                }
+                                if (!ungroupedFavorites.contains(appName)) {
+                                    ungroupedFavorites.add(appName);
+                                }
                             }
-                            
-                            // 添加到ungrouped
-                            ungroupedFavorites.add(draggedAppName);
-                            
-                            // 保存并刷新
-                            saveFavoriteApps();
-                            populateApplicationList();
-                            
-                            logger.info("Drop onto Ungrouped complete");
                         }
+                        // 来自favorited group的批量拖拽
+                        else if (draggedIndex >= 0) {
+                            logger.info("Batch dropping {} items onto Ungrouped from favorited", draggedAppNames.size());
+                            
+                            for (String appName : draggedAppNames) {
+                                // 从所有分组中移除
+                                for (int i = favoriteGroups.size() - 1; i >= 0; i--) {
+                                    FavoriteGroup g = favoriteGroups.get(i);
+                                    g.removeApp(appName);
+                                    if (g.isEmpty()) {
+                                        favoriteGroups.remove(i);
+                                        logger.info("Removed empty group: {}", g.getName());
+                                    }
+                                }
+                                // 添加到ungrouped（如果还不在里面）
+                                if (!ungroupedFavorites.contains(appName)) {
+                                    ungroupedFavorites.add(appName);
+                                }
+                            }
+                        }
+                        
+                        // 保存并刷新
+                        saveFavoriteApps();
+                        populateApplicationList();
+                        filterUnfavoritedApps();
                         
                         draggedCheckbox = null;
                         draggedIndex = -1;
                         draggedSourceGroup = null;
+                        draggedAppNames.clear();
                     }
                     
                     dtde.acceptDrop(DnDConstants.ACTION_MOVE);
@@ -1507,25 +1566,30 @@ public class BuildPackageDialog extends JDialog {
             public void drop(DropTargetDropEvent dtde) {
                 try {
                     // 只处理来自unfavorited的拖拽（draggedIndex == -2）
-                    if (draggedCheckbox != null && draggedIndex == -2) {
-                        String draggedAppName = draggedCheckbox.getText();
+                    if (draggedCheckbox != null && draggedIndex == -2 && !draggedAppNames.isEmpty()) {
+                        logger.info("Batch dropping {} items onto favorited panel, adding to Ungrouped", 
+                                   draggedAppNames.size());
                         
-                        logger.info("Dropping '{}' onto favorited panel empty space, adding to Ungrouped", 
-                                   draggedAppName);
-                        
-                        // 添加到favorites和ungrouped
-                        favoriteAppNames.add(draggedAppName);
-                        ungroupedFavorites.add(draggedAppName);
+                        for (String appName : draggedAppNames) {
+                            if (!favoriteAppNames.contains(appName)) {
+                                favoriteAppNames.add(appName);
+                            }
+                            if (!ungroupedFavorites.contains(appName)) {
+                                ungroupedFavorites.add(appName);
+                            }
+                        }
                         
                         // 保存并刷新
                         saveFavoriteApps();
                         populateApplicationList();
+                        filterUnfavoritedApps();
                         
-                        logger.info("Drop onto empty space complete, added to Ungrouped");
+                        logger.info("Batch drop onto favorited panel complete: {} items", draggedAppNames.size());
                         
                         draggedCheckbox = null;
                         draggedIndex = -1;
                         draggedSourceGroup = null;
+                        draggedAppNames.clear();
                     }
                     
                     dtde.acceptDrop(DnDConstants.ACTION_MOVE);
@@ -1566,13 +1630,28 @@ public class BuildPackageDialog extends JDialog {
                     
                     if (group != null) {
                         draggedIndex = group.getAppNames().indexOf(checkbox.getText());
-                        logger.debug("Drag started in group '{}': {} at index {}", 
-                                   group.getName(), checkbox.getText(), draggedIndex);
                     } else {
                         draggedIndex = ungroupedFavorites.indexOf(checkbox.getText());
-                        logger.debug("Drag started in ungrouped: {} at index {}", 
-                                   checkbox.getText(), draggedIndex);
                     }
+                    
+                    // 收集所有已勾选的收藏应用（批量拖拽）
+                    draggedAppNames.clear();
+                    for (JCheckBox cb : favoritedAppCheckboxes) {
+                        if (cb.isSelected()) {
+                            draggedAppNames.add(cb.getText());
+                        }
+                    }
+                    // 如果没有勾选任何项，则只拖拽当前项
+                    if (draggedAppNames.isEmpty()) {
+                        draggedAppNames.add(checkbox.getText());
+                    }
+                    // 确保当前拖拽的项也在列表中
+                    if (!draggedAppNames.contains(checkbox.getText())) {
+                        draggedAppNames.add(checkbox.getText());
+                    }
+                    
+                    logger.debug("Drag started from favorited: {} items ({})", 
+                               draggedAppNames.size(), draggedAppNames);
                 }
             }
         });
@@ -1593,112 +1672,102 @@ public class BuildPackageDialog extends JDialog {
             @Override
             public void drop(DropTargetDropEvent dtde) {
                 try {
-                    if (draggedCheckbox != null) {
-                        String draggedAppName = draggedCheckbox.getText();
+                    if (draggedCheckbox != null && !draggedAppNames.isEmpty()) {
                         String targetAppName = checkbox.getText();
                         
-                        // 来自unfavorited的拖拽（draggedIndex == -2）
+                        // 来自unfavorited的批量拖拽（draggedIndex == -2）
                         if (draggedIndex == -2) {
-                            logger.info("Dropping '{}' from unfavorited onto item '{}' in {}", 
-                                       draggedAppName, targetAppName,
+                            logger.info("Batch dropping {} items from unfavorited onto item '{}' in {}", 
+                                       draggedAppNames.size(), targetAppName,
                                        group != null ? group.getName() : "Ungrouped");
                             
-                            // 添加到favorites
-                            favoriteAppNames.add(draggedAppName);
-                            
-                            // 添加到目标位置（在目标item之前）
+                            // 在目标位置之前批量插入
                             if (group != null) {
                                 int targetIndex = group.getAppNames().indexOf(targetAppName);
-                                group.getAppNames().add(targetIndex, draggedAppName);
-                            } else {
-                                int targetIndex = ungroupedFavorites.indexOf(targetAppName);
-                                ungroupedFavorites.add(targetIndex, draggedAppName);
-                            }
-                            
-                            // 保存并刷新
-                            saveFavoriteApps();
-                            populateApplicationList();
-                            
-                            logger.info("Drop from unfavorited complete");
-                        }
-                        // 来自favorited的跨组拖拽（draggedIndex >= 0）
-                        else if (draggedIndex >= 0 && draggedSourceGroup != group) {
-                            logger.info("Cross-group drag: moving '{}' from {} to {}", 
-                                       draggedAppName,
-                                       draggedSourceGroup != null ? draggedSourceGroup.getName() : "Ungrouped",
-                                       group != null ? group.getName() : "Ungrouped");
-                            
-                            // 从源位置移除
-                            if (draggedSourceGroup != null) {
-                                draggedSourceGroup.removeApp(draggedAppName);
-                                if (draggedSourceGroup.isEmpty()) {
-                                    favoriteGroups.remove(draggedSourceGroup);
-                                    logger.info("Removed empty group: {}", draggedSourceGroup.getName());
+                                for (int i = 0; i < draggedAppNames.size(); i++) {
+                                    String appName = draggedAppNames.get(i);
+                                    if (!favoriteAppNames.contains(appName)) {
+                                        favoriteAppNames.add(appName);
+                                    }
+                                    group.getAppNames().add(targetIndex + i, appName);
                                 }
                             } else {
-                                ungroupedFavorites.remove(draggedAppName);
-                            }
-                            
-                            // 添加到目标位置（在目标item之前）
-                            if (group != null) {
-                                int targetIndex = group.getAppNames().indexOf(targetAppName);
-                                group.getAppNames().add(targetIndex, draggedAppName);
-                            } else {
                                 int targetIndex = ungroupedFavorites.indexOf(targetAppName);
-                                ungroupedFavorites.add(targetIndex, draggedAppName);
-                            }
-                            
-                            // 保存并刷新
-                            saveFavoriteApps();
-                            populateApplicationList();
-                            
-                            logger.info("Cross-group drag complete");
-                        }
-                        // 同组内拖拽：重新排序
-                        else if (draggedIndex >= 0 && group != null) {
-                            int targetIndex = group.getAppNames().indexOf(targetAppName);
-                            
-                            if (targetIndex >= 0 && targetIndex != draggedIndex) {
-                                logger.info("Reordering in group '{}': moving from index {} to {}", 
-                                           group.getName(), draggedIndex, targetIndex);
-                                
-                                // 重新排序
-                                String movedAppName = group.getAppNames().remove(draggedIndex);
-                                group.getAppNames().add(targetIndex, movedAppName);
-                                
-                                // 保存新顺序
-                                saveFavoriteApps();
-                                
-                                // 刷新UI
-                                populateApplicationList();
-                                
-                                logger.info("Reordering complete");
-                            }
-                        } else if (draggedIndex >= 0 && group == null) {
-                            // Ungrouped区域拖拽
-                            int targetIndex = ungroupedFavorites.indexOf(targetAppName);
-                            
-                            if (targetIndex >= 0 && targetIndex != draggedIndex) {
-                                logger.info("Reordering in ungrouped: moving from index {} to {}", 
-                                           draggedIndex, targetIndex);
-                                
-                                // 重新排序
-                                String movedAppName = ungroupedFavorites.remove(draggedIndex);
-                                ungroupedFavorites.add(targetIndex, movedAppName);
-                                
-                                // 保存新顺序
-                                saveFavoriteApps();
-                                
-                                // 刷新UI
-                                populateApplicationList();
-                                
-                                logger.info("Reordering complete");
+                                for (int i = 0; i < draggedAppNames.size(); i++) {
+                                    String appName = draggedAppNames.get(i);
+                                    if (!favoriteAppNames.contains(appName)) {
+                                        favoriteAppNames.add(appName);
+                                    }
+                                    ungroupedFavorites.add(targetIndex + i, appName);
+                                }
                             }
                         }
+                        // 来自favorited的批量拖拽：单项时保留排序逻辑，多项时移动到目标组
+                        else if (draggedIndex >= 0) {
+                            // 单项同组内排序
+                            if (draggedAppNames.size() == 1 && draggedSourceGroup == group) {
+                                String draggedAppName = draggedAppNames.get(0);
+                                if (group != null) {
+                                    int fromIndex = group.getAppNames().indexOf(draggedAppName);
+                                    int toIndex = group.getAppNames().indexOf(targetAppName);
+                                    if (fromIndex >= 0 && toIndex >= 0 && fromIndex != toIndex) {
+                                        group.getAppNames().remove(fromIndex);
+                                        group.getAppNames().add(toIndex, draggedAppName);
+                                    }
+                                } else {
+                                    int fromIndex = ungroupedFavorites.indexOf(draggedAppName);
+                                    int toIndex = ungroupedFavorites.indexOf(targetAppName);
+                                    if (fromIndex >= 0 && toIndex >= 0 && fromIndex != toIndex) {
+                                        ungroupedFavorites.remove(fromIndex);
+                                        ungroupedFavorites.add(toIndex, draggedAppName);
+                                    }
+                                }
+                            } else {
+                                // 批量跨组移动
+                                for (String appName : draggedAppNames) {
+                                    // 从所有分组中移除
+                                    for (int i = favoriteGroups.size() - 1; i >= 0; i--) {
+                                        FavoriteGroup g = favoriteGroups.get(i);
+                                        if (g != group) {
+                                            g.removeApp(appName);
+                                            if (g.isEmpty()) {
+                                                favoriteGroups.remove(i);
+                                            }
+                                        }
+                                    }
+                                    ungroupedFavorites.remove(appName);
+                                }
+                                
+                                // 在目标位置插入
+                                if (group != null) {
+                                    int targetIndex = group.getAppNames().indexOf(targetAppName);
+                                    for (int i = 0; i < draggedAppNames.size(); i++) {
+                                        String appName = draggedAppNames.get(i);
+                                        if (!group.containsApp(appName)) {
+                                            group.getAppNames().add(targetIndex + i, appName);
+                                        }
+                                    }
+                                } else {
+                                    int targetIndex = ungroupedFavorites.indexOf(targetAppName);
+                                    for (int i = 0; i < draggedAppNames.size(); i++) {
+                                        String appName = draggedAppNames.get(i);
+                                        if (!ungroupedFavorites.contains(appName)) {
+                                            ungroupedFavorites.add(targetIndex + i, appName);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // 保存并刷新
+                        saveFavoriteApps();
+                        populateApplicationList();
+                        filterUnfavoritedApps();
                         
                         draggedCheckbox = null;
                         draggedIndex = -1;
                         draggedSourceGroup = null;
+                        draggedAppNames.clear();
                     }
                     
                     dtde.acceptDrop(DnDConstants.ACTION_MOVE);
@@ -1733,21 +1802,113 @@ public class BuildPackageDialog extends JDialog {
     
     /**
      * 过滤未收藏应用列表
+     * 支持两种匹配模式：
+     * 1. Glob模式（通配符）：使用 * 和 ? 
+     * 2. 普通文本匹配：如果不包含通配符
+     * 
      * Filter unfavorited applications list
+     * Supports two matching modes:
+     * 1. Glob pattern (wildcards): using * and ?
+     * 2. Plain text: if no wildcards
      */
     private void filterUnfavoritedApps() {
-        String filterText = unfavoritedFilterField.getText().toLowerCase().trim();
+        String filterText = unfavoritedFilterField.getText().trim();
         
         logger.debug("Filtering unfavorited apps with text: {}", filterText);
         
+        // 如果过滤文本为空，显示所有应用
+        if (filterText.isEmpty()) {
+            for (JCheckBox checkbox : unfavoritedAppCheckboxes) {
+                checkbox.setVisible(true);
+            }
+            unfavoritedAppListPanel.revalidate();
+            unfavoritedAppListPanel.repaint();
+            return;
+        }
+        
+        // 检测是否是Glob模式（包含 * 或 ?）
+        boolean isGlob = filterText.contains("*") || filterText.contains("?");
+        
+        java.util.regex.Pattern pattern = null;
+        
+        if (isGlob) {
+            // 将Glob模式转换为正则表达式
+            String regexPattern = globToRegex(filterText);
+            try {
+                pattern = java.util.regex.Pattern.compile(regexPattern, java.util.regex.Pattern.CASE_INSENSITIVE);
+                logger.debug("Using glob pattern: {} -> regex: {}", filterText, regexPattern);
+            } catch (java.util.regex.PatternSyntaxException e) {
+                logger.warn("Glob to regex conversion failed, using plain text matching", e);
+                pattern = null;
+            }
+        }
+        
+        // 应用过滤
         for (JCheckBox checkbox : unfavoritedAppCheckboxes) {
-            String appName = checkbox.getText().toLowerCase();
-            boolean matches = filterText.isEmpty() || appName.contains(filterText);
+            String appName = checkbox.getText();
+            boolean matches = false;
+            
+            if (isGlob && pattern != null) {
+                // Glob通配符匹配
+                matches = pattern.matcher(appName).matches();
+            } else {
+                // 普通文本匹配（不区分大小写）
+                matches = appName.toLowerCase().contains(filterText.toLowerCase());
+            }
+            
             checkbox.setVisible(matches);
         }
         
         unfavoritedAppListPanel.revalidate();
         unfavoritedAppListPanel.repaint();
+    }
+    
+    /**
+     * 将Glob模式转换为正则表达式
+     * Convert glob pattern to regex pattern
+     * 
+     * @param glob Glob模式字符串
+     * @return 正则表达式字符串
+     */
+    private String globToRegex(String glob) {
+        StringBuilder regex = new StringBuilder("^");
+        
+        for (int i = 0; i < glob.length(); i++) {
+            char c = glob.charAt(i);
+            switch (c) {
+                case '*':
+                    // * 匹配任意字符（0个或多个）
+                    regex.append(".*");
+                    break;
+                case '?':
+                    // ? 匹配单个字符
+                    regex.append(".");
+                    break;
+                case '.':
+                case '(':
+                case ')':
+                case '+':
+                case '|':
+                case '^':
+                case '$':
+                case '@':
+                case '%':
+                case '[':
+                case ']':
+                case '{':
+                case '}':
+                case '\\':
+                    // 转义正则表达式特殊字符
+                    regex.append("\\").append(c);
+                    break;
+                default:
+                    regex.append(c);
+                    break;
+            }
+        }
+        
+        regex.append("$");
+        return regex.toString();
     }
     
     /**
@@ -1796,6 +1957,9 @@ public class BuildPackageDialog extends JDialog {
         saveFavoriteApps();
         populateApplicationList();
         
+        // 重新应用过滤器
+        filterUnfavoritedApps();
+        
         logger.info("Added {} apps to favorites (ungrouped)", selectedApps.size());
     }
     
@@ -1839,6 +2003,9 @@ public class BuildPackageDialog extends JDialog {
         // 保存并刷新UI
         saveFavoriteApps();
         populateApplicationList();
+        
+        // 重新应用过滤器
+        filterUnfavoritedApps();
         
         logger.info("Removed {} apps from favorites", selectedApps.size());
     }

@@ -157,6 +157,13 @@ public class GitHubApiClient {
     }
 
     /**
+     * 获取单个 commit 的详细信息（包括 diff）
+     */
+    public static String getSingleCommit(String owner, String repo, String sha, String token) throws IOException {
+        return executeGet("/repos/" + owner + "/" + repo + "/commits/" + sha, token);
+    }
+
+    /**
      * 获取仓库的 Releases
      */
     public static String getReleases(String owner, String repo, String token) throws IOException {

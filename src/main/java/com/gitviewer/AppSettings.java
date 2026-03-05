@@ -29,6 +29,8 @@ public class AppSettings {
     private String aiApiUrl;
     private String aiApiKey;
     private String aiModel;
+    private String aiChatMode;  // "simple" 或 "agent"
+    private int aiMaxIterations;  // Agent模式的最大循环次数
 
     // Jenkins 配置
     private String jenkinsUrl;
@@ -132,6 +134,8 @@ public class AppSettings {
                 aiApiUrl = props.getProperty("ai.api.url", "");
                 aiApiKey = props.getProperty("ai.api.key", "");
                 aiModel = props.getProperty("ai.model", "gpt-3.5-turbo");
+                aiChatMode = props.getProperty("ai.chat.mode", "simple");
+                aiMaxIterations = Integer.parseInt(props.getProperty("ai.max.iterations", "5"));
 
                 // 加载Jenkins配置
                 jenkinsUrl = props.getProperty("jenkins.url", "");
@@ -173,6 +177,15 @@ public class AppSettings {
         Properties props = new Properties();
         File file = new File(System.getProperty("user.home"), SETTINGS_FILE);
 
+        // 先加载现有设置，避免覆盖其他模块保存的数据（如 favorite groups）
+        if (file.exists()) {
+            try (FileInputStream fis = new FileInputStream(file)) {
+                props.load(fis);
+            } catch (IOException e) {
+                System.err.println("Error loading existing settings before save: " + e.getMessage());
+            }
+        }
+
         try (FileOutputStream fos = new FileOutputStream(file)) {
             // 保存左侧面板字体
             props.setProperty("left.font.name", leftPanelFont.getName());
@@ -210,6 +223,10 @@ public class AppSettings {
             if (aiModel != null && !aiModel.isEmpty()) {
                 props.setProperty("ai.model", aiModel);
             }
+            if (aiChatMode != null && !aiChatMode.isEmpty()) {
+                props.setProperty("ai.chat.mode", aiChatMode);
+            }
+            props.setProperty("ai.max.iterations", String.valueOf(aiMaxIterations));
 
             // 保存Jenkins配置
             if (jenkinsUrl != null && !jenkinsUrl.isEmpty()) {
@@ -370,6 +387,32 @@ public class AppSettings {
 
     public void setAiModel(String model) {
         this.aiModel = model;
+    }
+
+    public String getAiChatMode() {
+        return aiChatMode != null ? aiChatMode : "simple";
+    }
+
+    public void setAiChatMode(String mode) {
+        if (mode != null && !"simple".equals(mode) && !"agent".equals(mode)) {
+            System.err.println("[AppSettings] Invalid chat mode: " + mode + ", using 'simple'");
+            this.aiChatMode = "simple";
+        } else {
+            this.aiChatMode = mode;
+        }
+    }
+
+    public int getAiMaxIterations() {
+        return aiMaxIterations > 0 ? aiMaxIterations : 5;
+    }
+
+    public void setAiMaxIterations(int maxIterations) {
+        if (maxIterations < 1 || maxIterations > 10) {
+            System.err.println("[AppSettings] Invalid max iterations: " + maxIterations + ", using 5");
+            this.aiMaxIterations = 5;
+        } else {
+            this.aiMaxIterations = maxIterations;
+        }
     }
 
     // Jenkins 配置的 getter 和 setter
@@ -684,14 +727,67 @@ public class AppSettings {
                 String groupsJson = props.getProperty(key, "");
                 
                 if (groupsJson.isEmpty()) {
+                    System.out.println("[AppSettings] No groups found for tenant " + tenantCode);
                     return new ArrayList<>();
                 }
                 
+                System.out.println("[AppSettings] Loading groups for tenant " + tenantCode);
+                System.out.println("[AppSettings] JSON length: " + groupsJson.length() + " chars");
+                
                 // 解析JSON
-                return parseFavoriteGroupsJson(groupsJson);
+                List<FavoriteGroup> groups = parseFavoriteGroupsJson(groupsJson);
+                System.out.println("[AppSettings] Parsed " + groups.size() + " groups");
+                
+                return groups;
             } catch (IOException e) {
-                System.err.println("Error loading Portal favorite groups: " + e.getMessage());
+                System.err.println("[AppSettings] Error loading Portal favorite groups: " + e.getMessage());
+                e.printStackTrace();
+                
+                // 尝试从备份恢复
+                return tryLoadFromBackup(tenantCode);
+            } catch (Exception e) {
+                System.err.println("[AppSettings] Error parsing groups JSON: " + e.getMessage());
+                e.printStackTrace();
+                
+                // JSON解析失败，尝试从备份恢复
+                return tryLoadFromBackup(tenantCode);
             }
+        }
+        
+        return new ArrayList<>();
+    }
+    
+    /**
+     * 尝试从备份文件加载分组数据
+     * Try to load groups from backup file
+     */
+    private List<FavoriteGroup> tryLoadFromBackup(String tenantCode) {
+        System.out.println("[AppSettings] Attempting to load from backup...");
+        
+        File backupFile = new File(System.getProperty("user.home"), SETTINGS_FILE + ".backup");
+        if (!backupFile.exists()) {
+            System.err.println("[AppSettings] No backup file found");
+            return new ArrayList<>();
+        }
+        
+        Properties props = new Properties();
+        try (FileInputStream fis = new FileInputStream(backupFile)) {
+            props.load(fis);
+            String key = "portal.favorite.groups." + tenantCode;
+            String groupsJson = props.getProperty(key, "");
+            
+            if (!groupsJson.isEmpty()) {
+                List<FavoriteGroup> groups = parseFavoriteGroupsJson(groupsJson);
+                System.out.println("[AppSettings] Successfully loaded " + groups.size() + " groups from backup");
+                
+                // 恢复主文件
+                File mainFile = new File(System.getProperty("user.home"), SETTINGS_FILE);
+                restoreFromBackup(mainFile);
+                
+                return groups;
+            }
+        } catch (Exception e) {
+            System.err.println("[AppSettings] Failed to load from backup: " + e.getMessage());
         }
         
         return new ArrayList<>();
@@ -726,15 +822,31 @@ public class AppSettings {
         if (groups != null && !groups.isEmpty()) {
             String groupsJson = formatFavoriteGroupsJson(groups);
             props.setProperty(key, groupsJson);
+            System.out.println("[AppSettings] Saving " + groups.size() + " groups for tenant " + tenantCode);
+            System.out.println("[AppSettings] JSON length: " + groupsJson.length() + " chars");
         } else {
             props.remove(key);  // 如果列表为空，移除属性
+            System.out.println("[AppSettings] Removing groups for tenant " + tenantCode + " (empty list)");
         }
+        
+        // 创建备份（在保存前）
+        createBackup(file);
         
         // 保存设置
         try (FileOutputStream fos = new FileOutputStream(file)) {
             props.store(fos, "Git Info Viewer Settings");
+            System.out.println("[AppSettings] Settings saved successfully");
+            
+            // 验证保存是否成功
+            if (groups != null && !groups.isEmpty()) {
+                verifyGroupsSaved(tenantCode, groups.size());
+            }
         } catch (IOException e) {
-            System.err.println("Error saving Portal favorite groups: " + e.getMessage());
+            System.err.println("[AppSettings] ERROR saving Portal favorite groups: " + e.getMessage());
+            e.printStackTrace();
+            
+            // 尝试从备份恢复
+            restoreFromBackup(file);
         }
     }
     
@@ -938,6 +1050,64 @@ public class AppSettings {
             props.store(fos, "Git Viewer Settings");
         } catch (IOException e) {
             e.printStackTrace();
+        }
+    }
+    
+    /**
+     * 创建配置文件备份
+     * Create backup of settings file
+     */
+    private void createBackup(File originalFile) {
+        if (!originalFile.exists()) {
+            return;
+        }
+        
+        try {
+            File backupFile = new File(originalFile.getParent(), SETTINGS_FILE + ".backup");
+            java.nio.file.Files.copy(originalFile.toPath(), backupFile.toPath(), 
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            System.out.println("[AppSettings] Backup created: " + backupFile.getAbsolutePath());
+        } catch (IOException e) {
+            System.err.println("[AppSettings] Failed to create backup: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 从备份恢复配置文件
+     * Restore settings file from backup
+     */
+    private void restoreFromBackup(File originalFile) {
+        File backupFile = new File(originalFile.getParent(), SETTINGS_FILE + ".backup");
+        if (!backupFile.exists()) {
+            System.err.println("[AppSettings] No backup file found");
+            return;
+        }
+        
+        try {
+            java.nio.file.Files.copy(backupFile.toPath(), originalFile.toPath(), 
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            System.out.println("[AppSettings] Restored from backup: " + backupFile.getAbsolutePath());
+        } catch (IOException e) {
+            System.err.println("[AppSettings] Failed to restore from backup: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 验证分组数据是否成功保存
+     * Verify that groups were saved successfully
+     */
+    private void verifyGroupsSaved(String tenantCode, int expectedCount) {
+        try {
+            // 重新读取并验证
+            List<FavoriteGroup> savedGroups = getPortalFavoriteGroups(tenantCode);
+            if (savedGroups.size() == expectedCount) {
+                System.out.println("[AppSettings] Verification PASSED: " + savedGroups.size() + " groups saved correctly");
+            } else {
+                System.err.println("[AppSettings] Verification FAILED: Expected " + expectedCount + 
+                    " groups, but found " + savedGroups.size());
+            }
+        } catch (Exception e) {
+            System.err.println("[AppSettings] Verification ERROR: " + e.getMessage());
         }
     }
 }

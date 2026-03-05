@@ -218,25 +218,74 @@ public class FavoritesPanel extends JPanel {
                 return;
             }
             
+            // 调试日志：打印收藏任务的详细信息
+            System.out.println("[FavoritesPanel] ========== Navigation Debug ==========");
+            System.out.println("[FavoritesPanel] Job Display Name: " + job.getDisplayName());
+            System.out.println("[FavoritesPanel] Job Path: " + job.getJobPath());
+            System.out.println("[FavoritesPanel] Job URL: " + job.getJobUrl());
+            System.out.println("[FavoritesPanel] ==========================================");
+            
             // 显示加载提示对话框
             Window owner = SwingUtilities.getWindowAncestor(this);
-            JDialog loadingDialog = new JDialog(owner, "Loading", Dialog.ModalityType.APPLICATION_MODAL);
+            JDialog loadingDialog = new JDialog(owner, "Loading", Dialog.ModalityType.MODELESS);  // 改为非模态
             JPanel panel = new JPanel(new BorderLayout(10, 10));
             panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
             panel.add(new JLabel("Loading... please wait"), BorderLayout.CENTER);
             JProgressBar progressBar = new JProgressBar();
             progressBar.setIndeterminate(true);
             panel.add(progressBar, BorderLayout.SOUTH);
+            
+            // 添加取消按钮
+            JButton cancelButton = new JButton("Cancel");
+            panel.add(cancelButton, BorderLayout.EAST);
+            
             loadingDialog.add(panel);
-            loadingDialog.setSize(300, 120);
+            loadingDialog.setSize(350, 120);
             loadingDialog.setLocationRelativeTo(this);
-            loadingDialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
+            loadingDialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);  // 允许关闭
             
             // 在后台线程中执行导航
-            SwingWorker<Boolean, Void> worker = new SwingWorker<Boolean, Void>() {
+            class CancellableWorker extends SwingWorker<Boolean, Void> {
+                private volatile boolean cancelled = false;
+                
                 @Override
                 protected Boolean doInBackground() throws Exception {
-                    return parentDialog.navigateToJobPath(job.getJobPath());
+                    try {
+                        // 设置超时：最多等待30秒
+                        long startTime = System.currentTimeMillis();
+                        long timeout = 30000; // 30秒
+                        
+                        // 在新线程中执行导航
+                        java.util.concurrent.FutureTask<Boolean> task = 
+                            new java.util.concurrent.FutureTask<>(() -> {
+                                return parentDialog.navigateToJobPath(job.getJobPath());
+                            });
+                        
+                        Thread thread = new Thread(task);
+                        thread.setDaemon(true);
+                        thread.start();
+                        
+                        // 等待结果或超时
+                        while (!task.isDone() && !cancelled) {
+                            if (System.currentTimeMillis() - startTime > timeout) {
+                                System.err.println("[FavoritesPanel] Navigation timeout after 30 seconds");
+                                thread.interrupt();
+                                return false;
+                            }
+                            Thread.sleep(100);
+                        }
+                        
+                        if (cancelled) {
+                            thread.interrupt();
+                            return false;
+                        }
+                        
+                        return task.get();
+                    } catch (Exception e) {
+                        System.err.println("[FavoritesPanel] Navigation error: " + e.getMessage());
+                        e.printStackTrace();
+                        return false;
+                    }
                 }
                 
                 @Override
@@ -244,7 +293,14 @@ public class FavoritesPanel extends JPanel {
                     loadingDialog.dispose();
                     try {
                         boolean success = get();
-                        if (!success) {
+                        if (success) {
+                            // 导航成功，延迟一下再打开详情对话框
+                            // 使用invokeLater确保在EDT线程中执行，并且在Loading对话框关闭后
+                            SwingUtilities.invokeLater(() -> {
+                                System.out.println("[FavoritesPanel] Navigation successful, opening job details...");
+                                parentDialog.openSelectedJobDetails();
+                            });
+                        } else if (!cancelled) {
                             // Navigation failed, ask if should remove
                             int result = JOptionPane.showConfirmDialog(
                                 FavoritesPanel.this,
@@ -259,15 +315,33 @@ public class FavoritesPanel extends JPanel {
                             }
                         }
                     } catch (Exception e) {
-                        JOptionPane.showMessageDialog(
-                            FavoritesPanel.this,
-                            "Error navigating to job: " + e.getMessage(),
-                            "Navigation Error",
-                            JOptionPane.ERROR_MESSAGE
-                        );
+                        System.err.println("[FavoritesPanel] Error in done(): " + e.getMessage());
                     }
                 }
-            };
+                
+                public void cancelTask() {
+                    cancelled = true;
+                    cancel(true);
+                }
+            }
+            
+            CancellableWorker worker = new CancellableWorker();
+            
+            // 取消按钮事件
+            cancelButton.addActionListener(e -> {
+                System.out.println("[FavoritesPanel] User cancelled navigation");
+                worker.cancelTask();
+                loadingDialog.dispose();
+            });
+            
+            // 对话框关闭时取消任务
+            loadingDialog.addWindowListener(new java.awt.event.WindowAdapter() {
+                @Override
+                public void windowClosing(java.awt.event.WindowEvent e) {
+                    System.out.println("[FavoritesPanel] Loading dialog closed, cancelling task");
+                    worker.cancelTask();
+                }
+            });
             
             worker.execute();
             loadingDialog.setVisible(true);

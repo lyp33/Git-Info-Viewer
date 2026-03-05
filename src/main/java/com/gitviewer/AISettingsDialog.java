@@ -12,6 +12,8 @@ public class AISettingsDialog extends JDialog {
     private JTextField aiApiUrlField;
     private JTextField aiApiKeyField;
     private JTextField aiModelField;
+    private JComboBox<String> aiChatModeComboBox;
+    private JSpinner aiMaxIterationsSpinner;
     private boolean confirmed = false;
 
     public AISettingsDialog(Frame parent) {
@@ -23,7 +25,7 @@ public class AISettingsDialog extends JDialog {
 
     private void initializeUI() {
         setLayout(new BorderLayout(10, 10));
-        setSize(600, 400);
+        setSize(600, 550);
 
         JPanel mainPanel = new JPanel();
         mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
@@ -86,6 +88,44 @@ public class AISettingsDialog extends JDialog {
         modelPanel.add(aiModelField, BorderLayout.CENTER);
         mainPanel.add(modelPanel);
 
+        mainPanel.add(Box.createVerticalStrut(10));
+
+        // Chat Mode
+        JPanel modePanel = new JPanel(new BorderLayout(10, 5));
+        modePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 60));
+        JLabel modeLabel = new JLabel("Chat Mode:");
+        modeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        String[] modes = {"Simple Mode (Fast, 2 rounds)", "Agent Mode (Smart, Multi-round)"};
+        aiChatModeComboBox = new JComboBox<>(modes);
+        aiChatModeComboBox.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        aiChatModeComboBox.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        modePanel.add(modeLabel, BorderLayout.NORTH);
+        modePanel.add(aiChatModeComboBox, BorderLayout.CENTER);
+        mainPanel.add(modePanel);
+
+        mainPanel.add(Box.createVerticalStrut(10));
+
+        // Max Iterations (only for Agent mode)
+        JPanel iterationsPanel = new JPanel(new BorderLayout(10, 5));
+        iterationsPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 60));
+        JLabel iterationsLabel = new JLabel("Max Iterations (Agent Mode): 1-10 rounds, recommend 5");
+        iterationsLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        SpinnerNumberModel spinnerModel = new SpinnerNumberModel(5, 1, 10, 1);
+        aiMaxIterationsSpinner = new JSpinner(spinnerModel);
+        aiMaxIterationsSpinner.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        aiMaxIterationsSpinner.setPreferredSize(new Dimension(80, 30));
+        
+        // 设置Spinner编辑器的字体和对齐
+        JSpinner.DefaultEditor editor = (JSpinner.DefaultEditor) aiMaxIterationsSpinner.getEditor();
+        editor.getTextField().setFont(new Font("Segoe UI", Font.BOLD, 14));
+        editor.getTextField().setHorizontalAlignment(JTextField.CENTER);
+        
+        JPanel spinnerWrapper = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        spinnerWrapper.add(aiMaxIterationsSpinner);
+        iterationsPanel.add(iterationsLabel, BorderLayout.NORTH);
+        iterationsPanel.add(spinnerWrapper, BorderLayout.CENTER);
+        mainPanel.add(iterationsPanel);
+
         add(mainPanel, BorderLayout.CENTER);
 
         // 按钮面板
@@ -124,6 +164,17 @@ public class AISettingsDialog extends JDialog {
         aiApiUrlField.setText(settings.getAiApiUrl());
         aiApiKeyField.setText(settings.getAiApiKey());
         aiModelField.setText(settings.getAiModel());
+        
+        // 加载Chat Mode
+        String mode = settings.getAiChatMode();
+        if ("agent".equals(mode)) {
+            aiChatModeComboBox.setSelectedIndex(1);
+        } else {
+            aiChatModeComboBox.setSelectedIndex(0);
+        }
+        
+        // 加载Max Iterations
+        aiMaxIterationsSpinner.setValue(settings.getAiMaxIterations());
     }
 
     private void saveSettings() {
@@ -132,6 +183,14 @@ public class AISettingsDialog extends JDialog {
         settings.setAiApiUrl(aiApiUrlField.getText().trim());
         settings.setAiApiKey(aiApiKeyField.getText().trim());
         settings.setAiModel(aiModelField.getText().trim());
+        
+        // 保存Chat Mode
+        String mode = aiChatModeComboBox.getSelectedIndex() == 1 ? "agent" : "simple";
+        settings.setAiChatMode(mode);
+        
+        // 保存Max Iterations
+        settings.setAiMaxIterations((Integer) aiMaxIterationsSpinner.getValue());
+        
         settings.saveSettings();
     }
 

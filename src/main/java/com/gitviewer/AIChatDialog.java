@@ -10,6 +10,8 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * AI 聊天对话框
@@ -28,12 +30,17 @@ public class AIChatDialog extends JDialog {
     private AIService aiService;
     private String gitToken;
     private GitApiClient gitApiClient;  // 统一的 Git API 客户端
+    private GitToolRegistry toolRegistry;  // Tool 注册表
     private File currentDirectory;
     private String currentOwner;
     private String currentRepo;
     private String currentRemoteUrl;  // 添加 remote URL 字段
     private int lastSystemMessageStart = -1;  // 跟踪最后一条系统消息的起始位置
     private int lastSystemMessageEnd = -1;    // 跟踪最后一条系统消息的结束位置
+    
+    // Agent 模式相关
+    private int currentIteration = 0;  // 当前循环轮次
+    private StringBuilder collectedData = new StringBuilder();  // 已收集的数据
     
     // 样式
     private Style userStyle;
@@ -112,52 +119,67 @@ public class AIChatDialog extends JDialog {
 
         add(bottomPanel, BorderLayout.SOUTH);
 
-        // 顶部提示面板
-        JPanel topPanel = new JPanel(new BorderLayout());
+        // 顶部配置面板
+        JPanel topPanel = new JPanel(new BorderLayout(10, 10));
         topPanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 10, 15));
         topPanel.setBackground(new Color(232, 240, 254));
 
-        // 左侧：项目信息
-        String platformName = (gitApiClient != null) ? gitApiClient.getPlatformName() : "Git";
-        StringBuilder contextHtml = new StringBuilder("<html><b>").append(platformName).append(" Assistant</b><br/>");
-        
-        if (currentOwner != null && currentRepo != null) {
-            contextHtml.append("<span style='font-size:11px; color:#1a73e8;'>")
-                      .append("📁 ").append(currentOwner).append("/").append(currentRepo);
-            
-            if (currentRemoteUrl != null && !currentRemoteUrl.isEmpty()) {
-                contextHtml.append("<br/>🔗 ").append(currentRemoteUrl);
-            }
-            contextHtml.append("</span>");
-        } else {
-            contextHtml.append("<span style='font-size:11px; color:#5f6368;'>")
-                      .append("请在左侧选择一个 Git 项目")
-                      .append("</span>");
-        }
-        contextHtml.append("</html>");
-        
-        JLabel tipLabel = new JLabel(contextHtml.toString());
-        tipLabel.setFont(new Font("Microsoft YaHei", Font.PLAIN, 13));
-        tipLabel.setForeground(new Color(26, 115, 232));
-        topPanel.add(tipLabel, BorderLayout.WEST);
+        // 创建输入区域面板（使用 GridBagLayout 实现灵活布局）
+        JPanel inputPanel = new JPanel(new GridBagLayout());
+        inputPanel.setBackground(new Color(232, 240, 254));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        // 右侧：分支选择器
-        if (currentOwner != null && currentRepo != null && !allBranches.isEmpty()) {
-            JPanel branchPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
-            branchPanel.setBackground(new Color(232, 240, 254));
-            
-            JLabel branchLabel = new JLabel("分支:");
-            branchLabel.setFont(new Font("Microsoft YaHei", Font.PLAIN, 12));
-            branchPanel.add(branchLabel);
-            
-            // 可编辑的分支下拉框
-            branchComboBox = new JComboBox<>();
-            branchComboBox.setEditable(true);  // 设置为可编辑
-            branchComboBox.setFont(new Font("Microsoft YaHei", Font.PLAIN, 12));
-            branchComboBox.setPreferredSize(new Dimension(200, 30));
-            branchComboBox.setMaximumRowCount(10);
-            
-            // 添加所有分支
+        // 第一行：Git Path 输入
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 0;
+        JLabel pathLabel = new JLabel("Git Path:");
+        pathLabel.setFont(new Font("Microsoft YaHei", Font.PLAIN, 12));
+        inputPanel.add(pathLabel, gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        JTextField gitPathField = new JTextField();
+        gitPathField.setFont(new Font("Microsoft YaHei", Font.PLAIN, 12));
+        gitPathField.setPreferredSize(new Dimension(0, 30));
+        
+        // 设置初始值 - 显示完整的远程 URL
+        if (currentRemoteUrl != null && !currentRemoteUrl.isEmpty()) {
+            // 移除 "origin : " 前缀（如果有）
+            String displayUrl = currentRemoteUrl;
+            if (displayUrl.contains(" : ")) {
+                displayUrl = displayUrl.split(" : ")[1].trim();
+            }
+            gitPathField.setText(displayUrl);
+        } else if (currentOwner != null && currentRepo != null) {
+            gitPathField.setText(currentOwner + "/" + currentRepo);
+        }
+        
+        gitPathField.setToolTipText("输入完整的 Git 远程 URL，例如：https://gitlab.com/group/project.git 或 git@gitlab.com:group/project.git");
+        inputPanel.add(gitPathField, gbc);
+
+        // 第二行：Branch 选择
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        gbc.weightx = 0;
+        JLabel branchLabel = new JLabel("Branch:");
+        branchLabel.setFont(new Font("Microsoft YaHei", Font.PLAIN, 12));
+        inputPanel.add(branchLabel, gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        
+        // 可编辑的分支下拉框
+        branchComboBox = new JComboBox<>();
+        branchComboBox.setEditable(true);
+        branchComboBox.setFont(new Font("Microsoft YaHei", Font.PLAIN, 12));
+        branchComboBox.setPreferredSize(new Dimension(0, 30));
+        branchComboBox.setMaximumRowCount(10);
+        
+        // 添加所有分支
+        if (!allBranches.isEmpty()) {
             for (String branch : allBranches) {
                 branchComboBox.addItem(branch);
             }
@@ -166,52 +188,169 @@ public class AIChatDialog extends JDialog {
             if (currentBranch != null) {
                 branchComboBox.setSelectedItem(currentBranch);
             }
-            
-            // 获取编辑器组件
-            JTextField editor = (JTextField) branchComboBox.getEditor().getEditorComponent();
-            
-            // 添加文档监听器实现实时筛选
-            editor.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-                public void changedUpdate(javax.swing.event.DocumentEvent e) {
-                    if (!isFilteringBranches) {
-                        SwingUtilities.invokeLater(() -> filterBranches());
-                    }
+        } else {
+            // 如果没有分支列表，添加常用分支
+            branchComboBox.addItem("main");
+            branchComboBox.addItem("master");
+            branchComboBox.addItem("dev");
+            branchComboBox.addItem("develop");
+            if (currentBranch != null && !currentBranch.isEmpty()) {
+                branchComboBox.setSelectedItem(currentBranch);
+            }
+        }
+        
+        branchComboBox.setToolTipText("选择或输入分支名称");
+        inputPanel.add(branchComboBox, gbc);
+
+        // 获取编辑器组件用于实时筛选
+        JTextField branchEditor = (JTextField) branchComboBox.getEditor().getEditorComponent();
+        
+        // 添加文档监听器实现实时筛选
+        branchEditor.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                if (!isFilteringBranches) {
+                    SwingUtilities.invokeLater(() -> filterBranches());
                 }
-                public void removeUpdate(javax.swing.event.DocumentEvent e) {
-                    if (!isFilteringBranches) {
-                        SwingUtilities.invokeLater(() -> filterBranches());
-                    }
+            }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                if (!isFilteringBranches) {
+                    SwingUtilities.invokeLater(() -> filterBranches());
                 }
-                public void insertUpdate(javax.swing.event.DocumentEvent e) {
-                    if (!isFilteringBranches) {
-                        SwingUtilities.invokeLater(() -> filterBranches());
-                    }
+            }
+            public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                if (!isFilteringBranches) {
+                    SwingUtilities.invokeLater(() -> filterBranches());
                 }
-            });
+            }
+        });
+        
+        // 添加选择监听器
+        branchComboBox.addActionListener(e -> {
+            if (isFilteringBranches) {
+                return;
+            }
             
-            // 添加选择监听器
-            branchComboBox.addActionListener(e -> {
-                // 如果正在筛选，忽略事件
-                if (isFilteringBranches) {
+            String selected = (String) branchComboBox.getSelectedItem();
+            if (selected != null && !selected.trim().isEmpty() && !selected.equals(currentBranch)) {
+                if (allBranches.isEmpty() || allBranches.contains(selected)) {
+                    currentBranch = selected;
+                    System.out.println("[AI Chat] Branch changed to: " + currentBranch);
+                    appendSystemMessage("✓ 已切换到分支: " + currentBranch);
+                }
+            }
+        });
+
+        // 第三行：Apply 按钮和提示信息
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        gbc.gridwidth = 2;
+        gbc.weightx = 1.0;
+        
+        JPanel actionPanel = new JPanel(new BorderLayout(10, 0));
+        actionPanel.setBackground(new Color(232, 240, 254));
+        
+        JButton applyButton = new JButton("Apply");
+        applyButton.setFont(new Font("Microsoft YaHei", Font.BOLD, 12));
+        applyButton.setPreferredSize(new Dimension(80, 28));
+        applyButton.setBackground(new Color(66, 133, 244));
+        applyButton.setForeground(Color.WHITE);
+        applyButton.setFocusPainted(false);
+        applyButton.setBorderPainted(false);
+        applyButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        applyButton.setToolTipText("应用新的 Git 路径和分支设置");
+        
+        applyButton.addActionListener(e -> {
+            String newGitPath = gitPathField.getText().trim();
+            String newBranch = (String) branchComboBox.getSelectedItem();
+            
+            if (newGitPath.isEmpty()) {
+                JOptionPane.showMessageDialog(this, 
+                    "请输入 Git 远程 URL 或项目路径", 
+                    "输入错误", 
+                    JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            
+            // 判断是完整 URL 还是简化路径
+            if (newGitPath.startsWith("https://") || newGitPath.startsWith("http://") || newGitPath.startsWith("git@")) {
+                // 完整的 Git URL
+                currentRemoteUrl = newGitPath;
+                
+                // 从 URL 提取 owner/repo
+                String[] parts = extractOwnerRepoFromUrl(newGitPath);
+                if (parts != null) {
+                    currentOwner = parts[0];
+                    currentRepo = parts[1];
+                } else {
+                    JOptionPane.showMessageDialog(this, 
+                        "无法解析 Git URL\n\n请确保 URL 格式正确", 
+                        "解析错误", 
+                        JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+            } else {
+                // 简化的路径格式（owner/repo 或 group/subgroup/project）
+                String[] parts = newGitPath.split("/");
+                if (parts.length < 2) {
+                    JOptionPane.showMessageDialog(this, 
+                        "Git 路径格式错误\n\n正确格式：\n" +
+                        "- 完整 URL: https://gitlab.com/group/project.git\n" +
+                        "- 简化路径: owner/repo 或 group/subgroup/project", 
+                        "输入错误", 
+                        JOptionPane.WARNING_MESSAGE);
                     return;
                 }
                 
-                String selected = (String) branchComboBox.getSelectedItem();
-                if (selected != null && !selected.trim().isEmpty() && !selected.equals(currentBranch)) {
-                    // 检查选择的分支是否在原始列表中
-                    if (allBranches.contains(selected)) {
-                        currentBranch = selected;
-                        System.out.println("[AI Chat] Branch changed to: " + currentBranch);
-                        // 添加分支切换的提示消息
-                        appendSystemMessage("✓ 已切换到分支: " + currentBranch);
-                    }
+                // 对于简化路径，构建 owner/repo
+                if (parts.length == 2) {
+                    currentOwner = parts[0];
+                    currentRepo = parts[1];
+                } else {
+                    // 对于多级路径（如 group/subgroup/project），将前面的部分作为 owner
+                    currentOwner = String.join("/", java.util.Arrays.copyOfRange(parts, 0, parts.length - 1));
+                    currentRepo = parts[parts.length - 1];
                 }
-            });
+                
+                // 简化路径不更新 currentRemoteUrl（保持原有的）
+            }
             
-            branchPanel.add(branchComboBox);
+            if (newBranch != null && !newBranch.trim().isEmpty()) {
+                currentBranch = newBranch.trim();
+            }
             
-            topPanel.add(branchPanel, BorderLayout.EAST);
-        }
+            System.out.println("[AI Chat] Manual context updated:");
+            System.out.println("[AI Chat]   Remote URL: " + currentRemoteUrl);
+            System.out.println("[AI Chat]   Owner: " + currentOwner);
+            System.out.println("[AI Chat]   Repo: " + currentRepo);
+            System.out.println("[AI Chat]   Branch: " + currentBranch);
+            
+            // 重新初始化 Git API 客户端
+            if (currentRemoteUrl != null && !currentRemoteUrl.isEmpty()) {
+                gitApiClient = new GitApiClient(currentRemoteUrl, gitToken);
+                initializeToolRegistry();  // 重新初始化 Tool Registry
+            }
+            
+            // 显示成功消息
+            String displayPath = (currentRemoteUrl != null && !currentRemoteUrl.isEmpty()) 
+                ? currentRemoteUrl 
+                : currentOwner + "/" + currentRepo;
+            appendSystemMessage("✓ 已更新项目上下文: " + displayPath + " (分支: " + currentBranch + ")");
+            
+            // 更新系统消息
+            updateSystemMessage();
+        });
+        
+        actionPanel.add(applyButton, BorderLayout.WEST);
+        
+        // 添加提示信息
+        String platformName = (gitApiClient != null) ? gitApiClient.getPlatformName() : "Git";
+        JLabel hintLabel = new JLabel("<html><span style='font-size:10px; color:#5f6368;'>💡 提示：可以手动输入任意 " + platformName + " 项目路径</span></html>");
+        hintLabel.setFont(new Font("Microsoft YaHei", Font.PLAIN, 10));
+        actionPanel.add(hintLabel, BorderLayout.CENTER);
+        
+        inputPanel.add(actionPanel, gbc);
+
+        topPanel.add(inputPanel, BorderLayout.CENTER);
 
         add(topPanel, BorderLayout.NORTH);
     }
@@ -278,7 +417,33 @@ public class AIChatDialog extends JDialog {
         // 初始化 Git API 客户端
         if (currentRemoteUrl != null && !currentRemoteUrl.isEmpty()) {
             gitApiClient = new GitApiClient(currentRemoteUrl, gitToken);
+            initializeToolRegistry();  // 初始化 Tool Registry
         }
+    }
+    
+    /**
+     * 初始化 Tool Registry
+     * 注册所有可用的 Git Tools
+     */
+    private void initializeToolRegistry() {
+        toolRegistry = new GitToolRegistry();
+        
+        // 注册所有 Tools
+        toolRegistry.register(new com.gitviewer.tools.GetRepoTool(gitApiClient));
+        toolRegistry.register(new com.gitviewer.tools.GetIssuesTool(gitApiClient));
+        toolRegistry.register(new com.gitviewer.tools.GetPullRequestsTool(gitApiClient));
+        toolRegistry.register(new com.gitviewer.tools.GetCommitsTool(gitApiClient, currentBranch));
+        toolRegistry.register(new com.gitviewer.tools.GetBranchesTool(gitApiClient));
+        toolRegistry.register(new com.gitviewer.tools.GetReleasesTool(gitApiClient));
+        toolRegistry.register(new com.gitviewer.tools.GetContentsTool(gitApiClient));
+        toolRegistry.register(new com.gitviewer.tools.SearchRepositoriesTool(gitApiClient));
+        toolRegistry.register(new com.gitviewer.tools.SearchIssuesTool(gitApiClient));
+        toolRegistry.register(new com.gitviewer.tools.SearchFilesTool(gitApiClient));
+        toolRegistry.register(new com.gitviewer.tools.GetFileCommitsTool(gitApiClient, currentBranch));
+        toolRegistry.register(new com.gitviewer.tools.GetFileContentTool(gitApiClient, currentBranch));
+        toolRegistry.register(new com.gitviewer.tools.GetSingleCommitTool(gitApiClient));
+        
+        System.out.println("[AI Chat] Tool Registry initialized with " + toolRegistry.size() + " tools");
     }
 
     private void addSystemMessage() {
@@ -290,6 +455,24 @@ public class AIChatDialog extends JDialog {
         
         String systemPrompt = contextInfo + "你是一个友好的 GitHub 助手，请用中文回答用户的问题。";
         chatHistory.add(new AIService.ChatMessage("system", systemPrompt));
+    }
+
+    /**
+     * 更新系统消息（当用户手动更改项目上下文时）
+     */
+    private void updateSystemMessage() {
+        // 更新聊天历史中的第一条系统消息
+        if (!chatHistory.isEmpty() && chatHistory.get(0).role.equals("system")) {
+            String contextInfo = "";
+            if (currentOwner != null && currentRepo != null) {
+                contextInfo = "当前项目：" + currentOwner + "/" + currentRepo + "。";
+            }
+            
+            String systemPrompt = contextInfo + "你是一个友好的 GitHub 助手，请用中文回答用户的问题。";
+            chatHistory.set(0, new AIService.ChatMessage("system", systemPrompt));
+            
+            System.out.println("[AI Chat] System message updated with new context");
+        }
     }
 
     /**
@@ -322,8 +505,12 @@ public class AIChatDialog extends JDialog {
                     if (parts != null) {
                         currentOwner = parts[0];
                         currentRepo = parts[1];
-                        System.out.println("[AI Chat] Current context: " + currentOwner + "/" + currentRepo);
-                        System.out.println("[AI Chat] Remote URL: " + currentRemoteUrl);
+                        System.out.println("[AI Chat] extractGitInfo - Remote URL: " + remoteUrl);
+                        System.out.println("[AI Chat] extractGitInfo - Extracted owner: " + currentOwner);
+                        System.out.println("[AI Chat] extractGitInfo - Extracted repo: " + currentRepo);
+                        System.out.println("[AI Chat] extractGitInfo - Full context: " + currentOwner + "/" + currentRepo);
+                    } else {
+                        System.err.println("[AI Chat] extractGitInfo - Failed to extract owner/repo from URL: " + remoteUrl);
                     }
                 }
                 
@@ -356,40 +543,64 @@ public class AIChatDialog extends JDialog {
      * 从 Git remote URL 提取 owner/repo
      * 支持格式：
      * - https://github.com/owner/repo.git
+     * - https://gitlab.com/group/subgroup/project.git (多级路径)
      * - git@github.com:owner/repo.git
+     * - git@gitlab.com:group/subgroup/project.git (多级路径)
      * - origin : https://github.com/owner/repo.git
      */
     private String[] extractOwnerRepoFromUrl(String url) {
         try {
+            System.out.println("[AI Chat] extractOwnerRepoFromUrl - Input URL: " + url);
+            
             // 移除 "origin : " 前缀（如果有）
             String cleanUrl = url;
             if (url.contains(" : ")) {
                 cleanUrl = url.split(" : ")[1].trim();
+                System.out.println("[AI Chat] extractOwnerRepoFromUrl - Cleaned URL: " + cleanUrl);
             }
 
+            String path = null;
+            
             // 处理 HTTPS 格式
             if (cleanUrl.startsWith("https://") || cleanUrl.startsWith("http://")) {
-                // https://github.com/owner/repo.git
-                String path = cleanUrl.replaceFirst("https?://[^/]+/", "");
-                path = path.replaceFirst("\\.git$", "");
-                String[] parts = path.split("/");
-                if (parts.length >= 2) {
-                    return new String[]{parts[0], parts[1]};
-                }
+                // https://gitlab.com/group/subgroup/project.git
+                path = cleanUrl.replaceFirst("https?://[^/]+/", "");
+                System.out.println("[AI Chat] extractOwnerRepoFromUrl - HTTPS path extracted: " + path);
             }
             // 处理 SSH 格式
             else if (cleanUrl.startsWith("git@")) {
-                // git@github.com:owner/repo.git
-                String path = cleanUrl.split(":")[1];
+                // git@gitlab.com:group/subgroup/project.git
+                path = cleanUrl.split(":")[1];
+                System.out.println("[AI Chat] extractOwnerRepoFromUrl - SSH path extracted: " + path);
+            }
+            
+            if (path != null) {
+                // 移除 .git 后缀
                 path = path.replaceFirst("\\.git$", "");
+                System.out.println("[AI Chat] extractOwnerRepoFromUrl - Path after removing .git: " + path);
+                
+                // 分割路径
                 String[] parts = path.split("/");
+                System.out.println("[AI Chat] extractOwnerRepoFromUrl - Split into " + parts.length + " parts");
+                for (int i = 0; i < parts.length; i++) {
+                    System.out.println("[AI Chat] extractOwnerRepoFromUrl -   parts[" + i + "]: " + parts[i]);
+                }
+                
                 if (parts.length >= 2) {
-                    return new String[]{parts[0], parts[1]};
+                    // 对于多级路径（如 group/subgroup/project）
+                    // owner = group/subgroup, repo = project
+                    String owner = String.join("/", java.util.Arrays.copyOfRange(parts, 0, parts.length - 1));
+                    String repo = parts[parts.length - 1];
+                    System.out.println("[AI Chat] extractOwnerRepoFromUrl - Final owner: " + owner);
+                    System.out.println("[AI Chat] extractOwnerRepoFromUrl - Final repo: " + repo);
+                    return new String[]{owner, repo};
                 }
             }
         } catch (Exception e) {
-            System.err.println("[AI Chat] Failed to parse remote URL: " + e.getMessage());
+            System.err.println("[AI Chat] extractOwnerRepoFromUrl - ERROR: " + e.getMessage());
+            e.printStackTrace();
         }
+        System.err.println("[AI Chat] extractOwnerRepoFromUrl - Returning null");
         return null;
     }
 
@@ -416,76 +627,23 @@ public class AIChatDialog extends JDialog {
         // 禁用输入
         sendButton.setEnabled(false);
         inputField.setEnabled(false);
-        
-        // 显示"正在处理"提示
-        appendSystemMessage("💭 正在分析问题...");
 
         // 在后台线程处理
         Thread thread = new Thread(() -> {
             try {
-                // **第一阶段：让 AI 决定调用哪个 API**
-                String apiInstruction = askAIForApiCall(userMessage);
+                // 判断模式
+                AppSettings settings = AppSettings.getInstance();
+                String chatMode = settings.getAiChatMode();
                 
-                System.out.println("[AI Chat] AI returned instruction: " + apiInstruction);
+                System.out.println("[AI Chat] Chat Mode: " + chatMode);
                 
-                // 移除"正在分析"提示
-                SwingUtilities.invokeLater(() -> removeLastMessage());
-                
-                String githubData = null;
-                
-                // 检查 AI 是否返回了 API 调用指令
-                if (apiInstruction != null && isValidApiInstruction(apiInstruction)) {
-                    System.out.println("[AI Chat] Valid API instruction detected, proceeding to call GitHub API");
-                    
-                    // 显示"正在查询 GitHub"提示
-                    SwingUtilities.invokeLater(() -> appendSystemMessage("🔍 正在查询 GitHub..."));
-                    
-                    // 解析并执行 API 调用
-                    githubData = executeApiInstruction(apiInstruction);
-                    
-                    if (githubData != null) {
-                        System.out.println("[AI Chat] GitHub data received successfully");
-                    } else {
-                        System.out.println("[AI Chat] WARNING: GitHub API returned null");
-                    }
-                    
-                    // 移除"正在查询"提示
-                    SwingUtilities.invokeLater(() -> removeLastMessage());
+                if ("agent".equals(chatMode)) {
+                    // ===== Agent Mode =====
+                    processAgentMode(userMessage);
                 } else {
-                    System.out.println("[AI Chat] No valid API instruction, skipping GitHub API call");
+                    // ===== Simple Mode =====
+                    processSimpleMode(userMessage);
                 }
-                
-                // **第二阶段：让 AI 生成友好的回答**
-                SwingUtilities.invokeLater(() -> appendSystemMessage("🤖 AI 正在生成回答..."));
-                
-                String finalAnswer = askAIForFinalAnswer(userMessage, githubData);
-                
-                // 移除"正在生成"提示
-                SwingUtilities.invokeLater(() -> removeLastMessage());
-                
-                System.out.println("[AI Chat] Final answer generated");
-                
-                // 更新历史记录
-                chatHistory.add(new AIService.ChatMessage("user", userMessage));
-                chatHistory.add(new AIService.ChatMessage("assistant", finalAnswer));
-                
-                // 限制历史记录长度
-                if (chatHistory.size() > 20) {
-                    // 保留第一条 system message 和最近的对话
-                    AIService.ChatMessage systemMsg = chatHistory.get(0);
-                    chatHistory = new ArrayList<>(chatHistory.subList(chatHistory.size() - 19, chatHistory.size()));
-                    chatHistory.add(0, systemMsg);
-                    System.out.println("[AI Chat] Chat history trimmed to 20 messages");
-                }
-                
-                // 显示响应
-                String finalResponse = finalAnswer;
-                SwingUtilities.invokeLater(() -> {
-                    appendStyledMessage("Assistant", finalResponse, assistantStyle);
-                    sendButton.setEnabled(true);
-                    inputField.setEnabled(true);
-                    inputField.requestFocus();
-                });
                 
                 System.out.println("==================================================");
                 System.out.println("========== 对话完成 ==========");
@@ -504,6 +662,204 @@ public class AIChatDialog extends JDialog {
         });
         thread.setDaemon(true);  // 设置为守护线程，防止阻止应用退出
         thread.start();
+    }
+
+    /**
+     * Simple Mode（简单模式）- 单次 API 调用
+     */
+    private void processSimpleMode(String userMessage) {
+        System.out.println("========== 第一阶段：询问 AI 需要调用哪个 API ==========");
+        
+        // 显示"正在处理"提示
+        SwingUtilities.invokeLater(() -> appendSystemMessage("💭 正在分析问题..."));
+
+        // **第一阶段：让 AI 决定调用哪个 API**
+        String apiInstruction = askAIForApiCall(userMessage);
+        
+        System.out.println("[AI Chat] AI returned instruction: " + apiInstruction);
+        
+        // 移除"正在分析"提示
+        SwingUtilities.invokeLater(() -> removeLastMessage());
+        
+        String githubData = null;
+        
+        // 检查 AI 是否返回了 API 调用指令
+        if (apiInstruction != null && isValidApiInstruction(apiInstruction)) {
+            System.out.println("[AI Chat] Valid API instruction detected, proceeding to call Git API");
+            
+            // 显示"正在查询 Git"提示
+            SwingUtilities.invokeLater(() -> appendSystemMessage("🔍 正在查询 Git..."));
+            
+            // 解析并执行 API 调用
+            githubData = executeApiInstruction(apiInstruction);
+            
+            if (githubData != null) {
+                System.out.println("[AI Chat] Git data received successfully");
+            } else {
+                System.out.println("[AI Chat] WARNING: Git API returned null");
+            }
+            
+            // 移除"正在查询"提示
+            SwingUtilities.invokeLater(() -> removeLastMessage());
+        } else {
+            System.out.println("[AI Chat] No valid API instruction, skipping Git API call");
+        }
+        
+        // **第二阶段：让 AI 生成友好的回答**
+        System.out.println("========== 第二阶段：生成友好回答 ==========");
+        SwingUtilities.invokeLater(() -> appendSystemMessage("🤖 AI 正在生成回答..."));
+        
+        String finalAnswer = askAIForFinalAnswer(userMessage, githubData);
+        
+        // 移除"正在生成"提示
+        SwingUtilities.invokeLater(() -> removeLastMessage());
+        
+        System.out.println("[AI Chat] Final answer generated");
+        
+        // 更新历史记录
+        chatHistory.add(new AIService.ChatMessage("user", userMessage));
+        chatHistory.add(new AIService.ChatMessage("assistant", finalAnswer));
+        
+        // 限制历史记录长度
+        if (chatHistory.size() > 20) {
+            // 保留第一条 system message 和最近的对话
+            AIService.ChatMessage systemMsg = chatHistory.get(0);
+            chatHistory = new ArrayList<>(chatHistory.subList(chatHistory.size() - 19, chatHistory.size()));
+            chatHistory.add(0, systemMsg);
+            System.out.println("[AI Chat] Chat history trimmed to 20 messages");
+        }
+        
+        // 显示响应
+        String finalResponse = finalAnswer;
+        SwingUtilities.invokeLater(() -> {
+            appendStyledMessage("Assistant", finalResponse, assistantStyle);
+            sendButton.setEnabled(true);
+            inputField.setEnabled(true);
+            inputField.requestFocus();
+        });
+        
+        System.out.println("========== Simple Mode 完成 ==========\n");
+    }
+
+    /**
+     * Agent Mode（智能模式）- 多轮推理循环
+     */
+    private void processAgentMode(String userMessage) {
+        AppSettings settings = AppSettings.getInstance();
+        int maxIterations = settings.getAiMaxIterations();
+        
+        System.out.println("========== Agent Mode ==========");
+        System.out.println("[AI Chat] Max Iterations: " + maxIterations);
+        
+        // 重置状态
+        currentIteration = 0;
+        collectedData = new StringBuilder();
+        int executedIterations = 0;  // 记录实际执行的轮数
+        
+        // Agent 循环
+        for (currentIteration = 1; currentIteration <= maxIterations; currentIteration++) {
+            executedIterations = currentIteration;  // 记录当前轮次
+            System.out.println("\n========== Agent循环 第" + currentIteration + "轮 ==========");
+            
+            // 显示进度
+            final int iteration = currentIteration;
+            final int progress = (iteration * 100) / maxIterations;
+            SwingUtilities.invokeLater(() -> 
+                appendSystemMessage("🔄 Agent 循环 第" + iteration + "/" + maxIterations + "轮 (" + progress + "%)..."));
+            
+            // 询问 AI 下一步做什么
+            String nextAction = askAIForNextAction(userMessage, collectedData.toString(), 
+                                                   currentIteration, maxIterations);
+            
+            SwingUtilities.invokeLater(() -> removeLastMessage());
+            
+            System.out.println("[AI Chat] Agent decision: " + nextAction);
+            
+            // 解析 AI 决策
+            if (nextAction != null && nextAction.contains("\"action\": \"FINISH\"")) {
+                System.out.println("[AI Chat] Agent decided to FINISH");
+                break;  // AI 认为信息足够，结束循环
+            }
+            
+            // 检查是否是有效的 API 调用
+            if (nextAction == null || !isValidApiInstruction(nextAction)) {
+                System.out.println("[AI Chat] Invalid API instruction, ending loop");
+                break;
+            }
+            
+            // 执行 API 调用
+            SwingUtilities.invokeLater(() -> 
+                appendSystemMessage("🔍 正在调用 Git API..."));
+            
+            String apiData = executeApiInstruction(nextAction);
+            
+            SwingUtilities.invokeLater(() -> removeLastMessage());
+            
+            // 收集数据（带来源标注）
+            if (apiData != null && !apiData.isEmpty()) {
+                String apiName = extractJsonValue(nextAction, "action");
+                collectedData.append("\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+                collectedData.append("📊 数据来源: ").append(apiName)
+                            .append(" (第").append(currentIteration).append("轮)\n");
+                collectedData.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+                collectedData.append(apiData);
+                
+                System.out.println("[AI Chat] 第" + currentIteration + "轮数据收集成功");
+                System.out.println("[AI Chat] 已收集数据总长度: " + collectedData.length() + " chars");
+            } else {
+                System.out.println("[AI Chat] 第" + currentIteration + "轮 API 返回空数据");
+                // 记录失败但继续
+                collectedData.append("\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+                collectedData.append("⚠️ API 调用失败 (第").append(currentIteration).append("轮)\n");
+                collectedData.append("API: ").append(extractJsonValue(nextAction, "action")).append("\n");
+                collectedData.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+            }
+            
+            // 检查上下文大小，防止过大
+            if (collectedData.length() > 100000) {
+                System.out.println("[AI Chat] 上下文过大，截断早期数据");
+                String data = collectedData.toString();
+                int keepFrom = data.length() - 80000;
+                collectedData = new StringBuilder();
+                collectedData.append("...[早期数据已省略，保留最近80KB]\n\n");
+                collectedData.append(data.substring(keepFrom));
+            }
+        }
+        
+        System.out.println("\n[AI Chat] Agent模式完成，共执行" + executedIterations + "轮");
+        
+        // 生成最终回答
+        System.out.println("========== 生成最终回答 ==========");
+        SwingUtilities.invokeLater(() -> appendSystemMessage("🤖 AI 正在生成最终回答..."));
+        
+        String finalAnswer = askAIForFinalAnswer(userMessage, collectedData.toString());
+        
+        SwingUtilities.invokeLater(() -> removeLastMessage());
+        
+        System.out.println("[AI Chat] Final answer generated");
+        
+        // 更新历史记录
+        chatHistory.add(new AIService.ChatMessage("user", userMessage));
+        chatHistory.add(new AIService.ChatMessage("assistant", finalAnswer));
+        
+        // 限制历史记录长度
+        if (chatHistory.size() > 20) {
+            AIService.ChatMessage systemMsg = chatHistory.get(0);
+            chatHistory = new ArrayList<>(chatHistory.subList(chatHistory.size() - 19, chatHistory.size()));
+            chatHistory.add(0, systemMsg);
+            System.out.println("[AI Chat] Chat history trimmed to 20 messages");
+        }
+        
+        // 显示响应
+        String finalResponse = finalAnswer;
+        SwingUtilities.invokeLater(() -> {
+            appendStyledMessage("Assistant", finalResponse, assistantStyle);
+            sendButton.setEnabled(true);
+            inputField.setEnabled(true);
+            inputField.requestFocus();
+        });
+        
+        System.out.println("========== Agent Mode 完成 ==========\n");
     }
 
     /**
@@ -535,18 +891,13 @@ public class AIChatDialog extends JDialog {
             }
             context.append("\n");
             
-            context.append("可用的 API：\n");
-            context.append("1. get_repo - 获取仓库基本信息（star数、描述、语言等）\n");
-            context.append("2. get_issues - 获取 issues 列表（参数：state=open/closed/all）\n");
-            context.append("3. get_prs - 获取 pull requests/merge requests（参数：state=open/closed/all）\n");
-            context.append("4. get_commits - 获取最近的提交记录\n");
-            context.append("5. get_branches - 获取分支列表\n");
-            context.append("6. get_releases - 获取发布版本\n");
-            context.append("7. get_contents - 获取目录内容（参数：path，空表示根目录）\n");
-            context.append("8. search_repos - 搜索仓库（参数：query）\n");
-            context.append("9. search_issues - 搜索 issues（参数：query）\n");
-            context.append("10. search_files - 搜索文件（参数：filename，例如：abc.java）\n");
-            context.append("11. get_file_commits - 获取文件的提交历史（参数：filepath，例如：src/main/App.java）\n");
+            // 使用 Tool Registry 自动生成 API 列表
+            if (toolRegistry != null) {
+                context.append(toolRegistry.generateToolsDescription());
+            } else {
+                context.append("【可用的 Tools】\n");
+                context.append("(Tool Registry 未初始化)\n");
+            }
             context.append("\n");
             
             context.append("请分析用户的问题，如果需要调用 API，返回 JSON 格式：\n");
@@ -556,6 +907,13 @@ public class AIChatDialog extends JDialog {
             context.append("{\"action\": \"search_repos\", \"query\": \"machine learning\"}\n");
             context.append("{\"action\": \"search_files\", \"filename\": \"abc.java\"}\n");
             context.append("{\"action\": \"get_file_commits\", \"filepath\": \"src/main/App.java\"}\n");
+            context.append("{\"action\": \"get_file_content\", \"filepath\": \"envs/common/.basic\"}\n");
+            context.append("{\"action\": \"get_file_content\", \"filepath\": \"src/App.java\", \"branch\": \"dev\"}\n");
+            context.append("\n");
+            context.append("特别说明：\n");
+            context.append("- 当用户询问某个文件的内容、文件是做什么的、文件里有什么代码时，使用 get_file_content API\n");
+            context.append("- get_file_content 会返回文件的完整源代码，你可以直接分析并回答用户的问题\n");
+            context.append("- 不要建议用户使用 curl 命令，直接使用 API 获取内容\n");
             context.append("\n");
             context.append("注意：\n");
             context.append("- 如果用户没有指定项目，使用当前项目的 owner 和 repo\n");
@@ -584,35 +942,55 @@ public class AIChatDialog extends JDialog {
     }
 
     /**
-     * 第二阶段：让 AI 基于 GitHub 数据生成友好的回答
+     * 第二阶段：让 AI 基于 Git API 数据生成友好的回答
      */
     private String askAIForFinalAnswer(String userQuestion, String githubData) {
         try {
             System.out.println("\n========== 第二阶段：生成友好回答 ==========");
             System.out.println("[AI Chat] User question: " + userQuestion);
-            System.out.println("[AI Chat] Has GitHub data: " + (githubData != null && !githubData.isEmpty()));
+            System.out.println("[AI Chat] Has Git data: " + (githubData != null && !githubData.isEmpty()));
             if (githubData != null && !githubData.isEmpty()) {
-                System.out.println("[AI Chat] GitHub data preview: " + 
+                System.out.println("[AI Chat] Git data preview: " + 
                     githubData.substring(0, Math.min(300, githubData.length())) + "...");
             }
             
             List<AIService.ChatMessage> messages = new ArrayList<>();
             
+            String platformName = (gitApiClient != null) ? gitApiClient.getPlatformName() : "Git";
+            
             // 系统提示
             StringBuilder systemPrompt = new StringBuilder();
-            systemPrompt.append("你是一个友好的 GitHub 助手。\n");
+            systemPrompt.append("你是一个友好的 ").append(platformName).append(" 助手。\n");
             if (currentOwner != null && currentRepo != null) {
                 systemPrompt.append("当前项目：").append(currentOwner).append("/").append(currentRepo).append("\n");
             }
             systemPrompt.append("请用中文友好地回答用户的问题。\n");
             
+            // 如果有 Git 数据，强调 AI 应该直接使用这些数据
+            if (githubData != null && !githubData.isEmpty()) {
+                systemPrompt.append("\n【重要】你的能力和任务：\n");
+                systemPrompt.append("1. 你可以直接读取和分析文件内容\n");
+                systemPrompt.append("2. 我已经为你获取了完整的文件内容\n");
+                systemPrompt.append("3. 你必须直接展示和分析这些内容\n");
+                systemPrompt.append("\n【严格禁止】：\n");
+                systemPrompt.append("- 禁止说\"无法访问\"、\"无法读取\"、\"不能直接查看\"\n");
+                systemPrompt.append("- 禁止建议用户使用 git 命令、curl 命令\n");
+                systemPrompt.append("- 禁止说需要其他工具或权限\n");
+                systemPrompt.append("\n【你应该做的】：\n");
+                systemPrompt.append("- 直接展示文件内容或 commit 修改内容\n");
+                systemPrompt.append("- 分析文件的作用和配置项\n");
+                systemPrompt.append("- 回答用户关于文件的任何问题\n");
+                systemPrompt.append("- 如果是 commit 信息，直接展示 commit message、author、date 和具体的代码修改（diff）\n");
+                systemPrompt.append("- 可以提供相关的 URL 链接（如 commit URL、文件 URL）方便用户查看\n");
+            }
+            
             messages.add(new AIService.ChatMessage("system", systemPrompt.toString()));
             messages.add(new AIService.ChatMessage("user", userQuestion));
             
-            // 如果有 GitHub 数据，添加到上下文
+            // 如果有 Git 数据，添加到上下文
             if (githubData != null && !githubData.isEmpty()) {
                 messages.add(new AIService.ChatMessage("system", 
-                    "以下是从 GitHub API 获取的数据，请基于这些数据回答用户的问题：\n\n" + githubData));
+                    "【文件内容】以下是我从 " + platformName + " 获取的完整文件内容，你现在拥有这些数据，请直接展示和分析：\n\n" + githubData));
             }
             
             System.out.println("[AI Chat] Sending request to AI API for final answer...");
@@ -662,122 +1040,90 @@ public class AIChatDialog extends JDialog {
     }
 
     /**
-     * 执行 API 调用指令
+     * 执行 API 调用指令（Tool-Based 架构）
      */
     private String executeApiInstruction(String instruction) {
         try {
             String platformName = (gitApiClient != null) ? gitApiClient.getPlatformName() : "Git";
-            System.out.println("\n========== 执行 " + platformName + " API 调用 ==========");
+            System.out.println("\n========== 执行 " + platformName + " Tool 调用 ==========");
             System.out.println("[AI Chat] Instruction: " + instruction);
             
-            // 简单的 JSON 解析
-            String action = extractJsonValue(instruction, "action");
-            String owner = extractJsonValue(instruction, "owner");
-            String repo = extractJsonValue(instruction, "repo");
-            String state = extractJsonValue(instruction, "state");
-            String query = extractJsonValue(instruction, "query");
-            String path = extractJsonValue(instruction, "path");
+            // 解析 action（Tool 名称）
+            String toolName = extractJsonValue(instruction, "action");
+            System.out.println("[AI Chat] Tool name: " + toolName);
             
-            System.out.println("[AI Chat] Parsed - action: " + action);
-            System.out.println("[AI Chat] Parsed - owner: " + owner);
-            System.out.println("[AI Chat] Parsed - repo: " + repo);
-            System.out.println("[AI Chat] Parsed - state: " + state);
-            System.out.println("[AI Chat] Parsed - query: " + query);
-            System.out.println("[AI Chat] Parsed - path: " + path);
-            
-            // 如果没有指定 owner/repo，使用当前上下文
-            if ((owner == null || owner.isEmpty()) && currentOwner != null) {
-                owner = currentOwner;
-                System.out.println("[AI Chat] Using current owner: " + owner);
-            }
-            if ((repo == null || repo.isEmpty()) && currentRepo != null) {
-                repo = currentRepo;
-                System.out.println("[AI Chat] Using current repo: " + repo);
+            // 检查 Tool Registry 是否初始化
+            if (toolRegistry == null) {
+                System.err.println("[AI Chat] ERROR: Tool Registry not initialized");
+                return "ERROR: Tool Registry not initialized. Please check Git API configuration.";
             }
             
-            System.out.println("[AI Chat] Final - owner: " + owner + ", repo: " + repo);
-            System.out.println("[AI Chat] Calling " + platformName + " API: " + action);
-            
-            if (gitApiClient == null) {
-                System.err.println("[AI Chat] ERROR: Git API client not initialized");
-                return null;
+            // 检查 Tool 是否存在
+            if (!toolRegistry.hasTool(toolName)) {
+                System.err.println("[AI Chat] ERROR: Unknown tool: " + toolName);
+                String availableTools = toolRegistry.getToolNames();
+                return "ERROR: Unknown tool '" + toolName + "'. Available tools: " + availableTools;
             }
             
-            String result = null;
+            // 获取 Tool
+            GitTool tool = toolRegistry.getTool(toolName);
+            System.out.println("[AI Chat] Tool found: " + tool.getDescription());
             
-            // 根据 action 调用相应的 API
-            switch (action) {
-                case "get_repo":
-                    System.out.println("[AI Chat] API Call: gitApiClient.getRepository(" + owner + ", " + repo + ")");
-                    result = gitApiClient.getRepository(owner, repo);
-                    break;
-                case "get_issues":
-                    String issueState = state != null ? state : "open";
-                    System.out.println("[AI Chat] API Call: gitApiClient.getIssues(" + owner + ", " + repo + ", " + issueState + ")");
-                    result = gitApiClient.getIssues(owner, repo, issueState);
-                    break;
-                case "get_prs":
-                    String prState = state != null ? state : "open";
-                    System.out.println("[AI Chat] API Call: gitApiClient.getPullRequests(" + owner + ", " + repo + ", " + prState + ")");
-                    result = gitApiClient.getPullRequests(owner, repo, prState);
-                    break;
-                case "get_commits":
-                    System.out.println("[AI Chat] API Call: gitApiClient.getCommits(" + owner + ", " + repo + ", " + currentBranch + ")");
-                    result = gitApiClient.getCommits(owner, repo, currentBranch);
-                    break;
-                case "get_branches":
-                    System.out.println("[AI Chat] API Call: gitApiClient.getBranches(" + owner + ", " + repo + ")");
-                    result = gitApiClient.getBranches(owner, repo);
-                    break;
-                case "get_releases":
-                    System.out.println("[AI Chat] API Call: gitApiClient.getReleases(" + owner + ", " + repo + ")");
-                    result = gitApiClient.getReleases(owner, repo);
-                    break;
-                case "get_contents":
-                    String contentsPath = path != null ? path : "";
-                    System.out.println("[AI Chat] API Call: gitApiClient.getContents(" + owner + ", " + repo + ", \"" + contentsPath + "\")");
-                    result = gitApiClient.getContents(owner, repo, contentsPath);
-                    break;
-                case "search_repos":
-                    System.out.println("[AI Chat] API Call: gitApiClient.searchRepositories(" + query + ")");
-                    result = gitApiClient.searchRepositories(query);
-                    break;
-                case "search_issues":
-                    System.out.println("[AI Chat] API Call: gitApiClient.searchIssues(" + query + ")");
-                    result = gitApiClient.searchIssues(query);
-                    break;
-                case "search_files":
-                    String filename = extractJsonValue(instruction, "filename");
-                    System.out.println("[AI Chat] API Call: gitApiClient.searchFiles(" + owner + ", " + repo + ", " + filename + ")");
-                    result = gitApiClient.searchFiles(owner, repo, filename);
-                    break;
-                case "get_file_commits":
-                    String filepath = extractJsonValue(instruction, "filepath");
-                    System.out.println("[AI Chat] API Call: gitApiClient.getFileCommits(" + owner + ", " + repo + ", " + filepath + ", " + currentBranch + ")");
-                    result = gitApiClient.getFileCommits(owner, repo, filepath, currentBranch);
-                    break;
-                default:
-                    System.err.println("[AI Chat] ERROR: Unknown action: " + action);
-                    System.out.println("========================================\n");
-                    return null;
+            // 解析参数
+            Map<String, String> params = new java.util.HashMap<>();
+            for (String paramName : tool.getParameters().keySet()) {
+                String value = extractJsonValue(instruction, paramName);
+                if (value != null && !value.isEmpty()) {
+                    params.put(paramName, value);
+                }
+            }
+            
+            // 自动填充 owner/repo（如果未指定）
+            if (!params.containsKey("owner") || params.get("owner").isEmpty()) {
+                if (currentOwner != null && !currentOwner.isEmpty()) {
+                    params.put("owner", currentOwner);
+                    System.out.println("[AI Chat] Auto-filled owner: " + currentOwner);
+                }
+            }
+            if (!params.containsKey("repo") || params.get("repo").isEmpty()) {
+                if (currentRepo != null && !currentRepo.isEmpty()) {
+                    params.put("repo", currentRepo);
+                    System.out.println("[AI Chat] Auto-filled repo: " + currentRepo);
+                }
+            }
+            
+            System.out.println("[AI Chat] Parameters: " + params);
+            
+            // 执行 Tool
+            System.out.println("[AI Chat] Executing tool: " + toolName);
+            String result = tool.execute(params);
+            
+            // 统一的数据大小限制（除了 get_file_content 已经在 Tool 内部处理）
+            if (result != null && !toolName.equals("get_file_content") && result.length() > 20000) {
+                System.out.println("[AI Chat] Response too large (" + result.length() + " chars), truncating to 20000");
+                result = result.substring(0, 20000) + "\n\n...[数据过多，已截断到20000字符。建议使用更具体的搜索条件]";
             }
             
             if (result != null) {
-                System.out.println("[AI Chat] API Response received, length: " + result.length() + " chars");
-                System.out.println("[AI Chat] Response preview: " + 
-                    result.substring(0, Math.min(200, result.length())) + "...");
+                System.out.println("[AI Chat] Tool execution completed, result length: " + result.length() + " chars");
+                if (!result.startsWith("ERROR:")) {
+                    System.out.println("[AI Chat] Result preview: " + 
+                        result.substring(0, Math.min(200, result.length())) + "...");
+                } else {
+                    System.err.println("[AI Chat] Tool returned error: " + result);
+                }
             } else {
-                System.out.println("[AI Chat] API Response: null");
+                System.out.println("[AI Chat] Tool returned null");
             }
             
-            System.out.println("========== API 调用完成 ==========\n");
+            System.out.println("========== Tool 调用完成 ==========\n");
             return result;
             
         } catch (Exception e) {
-            System.err.println("[AI Chat] ERROR executing API: " + e.getMessage());
+            System.err.println("[AI Chat] ERROR executing tool: " + e.getMessage());
             e.printStackTrace();
             System.out.println("========================================\n");
-            return null;
+            return "ERROR: " + e.getMessage();
         }
     }
 
@@ -951,6 +1297,163 @@ public class AIChatDialog extends JDialog {
             // 捕获所有可能的异常，确保不影响主流程
         } finally {
             isFilteringBranches = false;  // 重置标志位
+        }
+    }
+
+    /**
+     * Agent Mode: 询问 AI 下一步应该做什么
+     */
+    private String askAIForNextAction(String userQuestion, String collectedData, 
+                                      int currentIteration, int maxIterations) {
+        try {
+            System.out.println("\n========== 询问 AI 下一步行动 ==========");
+            System.out.println("[AI Chat] Current iteration: " + currentIteration + "/" + maxIterations);
+            System.out.println("[AI Chat] Collected data length: " + collectedData.length() + " chars");
+            
+            List<AIService.ChatMessage> messages = new ArrayList<>();
+            
+            String platformName = (gitApiClient != null) ? gitApiClient.getPlatformName() : "Git";
+            
+            // 构建完整上下文
+            StringBuilder context = new StringBuilder();
+            context.append("你是一个智能 ").append(platformName).append(" Agent。\n\n");
+            
+            // 当前状态
+            context.append("【当前状态】\n");
+            context.append("- 用户问题：").append(userQuestion).append("\n");
+            context.append("- 当前轮次：").append(currentIteration).append("/").append(maxIterations).append("\n");
+            if (currentOwner != null && currentRepo != null) {
+                context.append("- 当前项目：").append(currentOwner).append("/").append(currentRepo).append("\n");
+                if (currentBranch != null && !currentBranch.isEmpty()) {
+                    context.append("- 当前分支：").append(currentBranch).append("\n");
+                }
+            }
+            context.append("\n");
+            
+            // 已收集的数据
+            if (collectedData != null && !collectedData.isEmpty()) {
+                context.append("【已收集的数据】\n");
+                context.append(collectedData);
+                context.append("\n\n");
+            } else {
+                context.append("【已收集的数据】\n");
+                context.append("（暂无数据）\n\n");
+            }
+            
+            // 使用 Tool Registry 自动生成 API 列表（每轮都包含）
+            if (toolRegistry != null) {
+                context.append(toolRegistry.generateToolsDescription());
+            } else {
+                context.append("【可用的 Tools】\n");
+                context.append("(Tool Registry 未初始化)\n");
+            }
+            context.append("\n");
+            
+            // 决策指南
+            context.append("【分步思考】\n");
+            context.append("请按照以下步骤分析用户问题：\n");
+            context.append("1. 理解用户问题的核心需求\n");
+            context.append("2. 分解问题：需要哪些信息才能回答？\n");
+            context.append("3. 检查已收集的数据：缺少哪些关键信息？\n");
+            context.append("4. 确定下一步：需要调用哪个 API 来获取缺失的信息？\n");
+            context.append("\n");
+            
+            context.append("【常见问题的分步策略】\n");
+            context.append("• 询问\"某个文件的XXX\"：\n");
+            context.append("  步骤1：如果不知道文件路径 → search_files 查找文件（返回路径和代码片段）\n");
+            context.append("  步骤2：找到路径后 → 根据需求调用 get_file_commits 或 get_file_content\n");
+            context.append("  注意：search_files 只返回代码片段，不是完整文件！\n");
+            context.append("\n");
+            context.append("• 询问\"文件最后一次修改了什么\"或\"最近的修改内容\"：\n");
+            context.append("  步骤1：如果不知道文件路径 → search_files 查找文件\n");
+            context.append("  步骤2：get_file_commits 获取提交历史（返回 commit 列表，包含 SHA）\n");
+            context.append("  步骤3：**关键**从返回的 commit 列表中提取第一个（最新）commit 的 SHA\n");
+            context.append("  步骤4：调用 get_single_commit 获取该 commit 的详细信息（包括 diff）\n");
+            context.append("  步骤5：FINISH（已有完整的修改内容）\n");
+            context.append("  错误示例：重复调用 get_file_commits ❌\n");
+            context.append("  正确示例：get_file_commits → get_single_commit(sha=最新commit的SHA) → FINISH ✓\n");
+            context.append("\n");
+            context.append("• 询问\"最近修改了XXX的commit\"：\n");
+            context.append("  步骤1：如果不知道文件路径 → search_files 查找文件\n");
+            context.append("  步骤2：get_file_commits 获取提交历史\n");
+            context.append("  步骤3：如果需要查看具体修改内容 → get_single_commit 获取 diff\n");
+            context.append("\n");
+            context.append("• 询问\"包含某个业务术语的文件\"（如 'interest settlement'）：\n");
+            context.append("  **关键**：业务术语在代码中可能是分开的（如 InterestSettlement、interest_settlement）\n");
+            context.append("  **策略**：提取最核心的关键词进行搜索\n");
+            context.append("  示例：'interest settlement' → 先搜索 'interest'（最核心的词）\n");
+            context.append("  方法1（推荐）：用最核心的关键词搜索（如 filename=\"interest\"）\n");
+            context.append("  方法2（如果结果太多）：搜索组合词（如 filename=\"InterestSettlement\" 或 \"interest_settlement\"）\n");
+            context.append("  方法3（精确筛选）：先搜索核心词，然后逐个查看文件内容，筛选包含所有关键词的文件\n");
+            context.append("  注意：search_files 返回的是代码片段，如需完整文件内容，必须再调用 get_file_content\n");
+            context.append("\n");
+            context.append("• 询问\"查看完整文件内容\"：\n");
+            context.append("  步骤1：search_files 找到文件路径（如果不知道路径）\n");
+            context.append("  步骤2：**必须**调用 get_file_content 获取完整内容（search_files 的结果不完整！）\n");
+            context.append("  错误示例：只调用 search_files 就返回 FINISH ❌\n");
+            context.append("  正确示例：search_files → get_file_content → FINISH ✓\n");
+            context.append("\n");
+            context.append("• 询问\"对比两个分支\"：\n");
+            context.append("  步骤1：get_commits (branch: master)\n");
+            context.append("  步骤2：get_commits (branch: develop)\n");
+            context.append("  步骤3：FINISH（已有足够数据对比）\n");
+            context.append("\n");
+            
+            context.append("【决策规则】\n");
+            context.append("1. 如果用户提到文件名但没有完整路径，优先使用 search_files 确认文件是否存在\n");
+            context.append("2. 如果已有文件路径，可以直接调用 get_file_commits 或 get_file_content\n");
+            context.append("3. **重要**：search_files 只返回代码片段！如果用户问的是文件内容、文件做什么、最后修改等，必须再调用 get_file_content 或 get_file_commits\n");
+            context.append("4. **重要**：get_file_commits 只返回 commit 列表（SHA、message、author）！如果用户问具体修改了什么，必须再调用 get_single_commit 获取 diff\n");
+            context.append("5. **禁止重复调用同一个 API**：如果上一轮已经调用过某个 API 并获得了数据，不要再次调用相同的 API\n");
+            context.append("6. 只有当已收集的数据能完整回答用户问题时，才返回 FINISH\n");
+            context.append("7. 每次只执行一个最关键的步骤，不要跳步\n");
+            context.append("8. **重要**：调用 API 时，如果有当前分支信息，必须传递 ref 参数指定分支\n");
+            context.append("\n");
+            
+            context.append("【返回格式】\n");
+            context.append("如果数据足够：\n");
+            context.append("{\"action\": \"FINISH\", \"reason\": \"已收集足够信息\"}\n");
+            context.append("\n");
+            context.append("如果需要更多数据（必须包含 reason 说明为什么需要这个 API）：\n");
+            
+            // 根据是否有当前分支，提供不同的示例
+            if (currentBranch != null && !currentBranch.isEmpty()) {
+                context.append("{\"action\": \"search_files\", \"filename\": \"pom.xml\", \"ref\": \"")
+                       .append(currentBranch).append("\", \"reason\": \"需要在当前分支查找文件\"}\n");
+                context.append("{\"action\": \"get_file_commits\", \"filepath\": \"pom.xml\", \"branch\": \"")
+                       .append(currentBranch).append("\", \"reason\": \"需要查看当前分支的提交历史\"}\n");
+                context.append("{\"action\": \"get_single_commit\", \"sha\": \"abc123\", \"reason\": \"需要查看这个 commit 的具体修改内容（diff）\"}\n");
+                context.append("{\"action\": \"get_file_content\", \"filepath\": \"src/App.java\", \"ref\": \"")
+                       .append(currentBranch).append("\", \"reason\": \"需要查看当前分支的文件内容\"}\n");
+            } else {
+                context.append("{\"action\": \"search_files\", \"filename\": \"pom.xml\", \"reason\": \"需要先确认 pom 文件的完整路径\"}\n");
+                context.append("{\"action\": \"get_file_commits\", \"filepath\": \"pom.xml\", \"reason\": \"需要查看文件的提交历史\"}\n");
+                context.append("{\"action\": \"get_file_content\", \"filepath\": \"src/App.java\", \"reason\": \"需要查看文件内容\"}\n");
+            }
+            context.append("\n");
+            context.append("【重要提醒】\n");
+            context.append("- 只返回 JSON，不要有其他文字\n");
+            context.append("- 必须包含 reason 字段解释你的决策\n");
+            context.append("- 如果当前轮次是最后一轮（").append(currentIteration).append("/").append(maxIterations)
+                      .append("），建议返回 FINISH\n");
+            
+            messages.add(new AIService.ChatMessage("system", context.toString()));
+            messages.add(new AIService.ChatMessage("user", "下一步应该做什么？"));
+            
+            System.out.println("[AI Chat] Sending request to AI API...");
+            System.out.println("[AI Chat] Context length: " + context.length() + " chars");
+            
+            String response = aiService.chat(messages);
+            
+            System.out.println("[AI Chat] AI Response: " + response);
+            System.out.println("========== 询问完成 ==========\n");
+            
+            return response.trim();
+            
+        } catch (Exception e) {
+            System.err.println("[AI Chat] ERROR in askAIForNextAction: " + e.getMessage());
+            e.printStackTrace();
+            return null;
         }
     }
 }

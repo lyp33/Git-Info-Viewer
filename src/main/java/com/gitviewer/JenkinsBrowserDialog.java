@@ -579,19 +579,37 @@ public class JenkinsBrowserDialog extends JDialog {
      * @return 是否成功定位
      */
     public boolean navigateToJobPath(String jobPath) {
+        System.out.println("[JenkinsBrowserDialog] ========== navigateToJobPath Debug ==========");
+        System.out.println("[JenkinsBrowserDialog] Input jobPath: [" + jobPath + "]");
+        System.out.println("[JenkinsBrowserDialog] Base job path: [" + baseJobPath + "]");
+        
         logToConsole("Navigating to job: " + jobPath);
         logToConsole("Base job path: " + baseJobPath);
+        
+        // 清理路径：移除可能的 [*] 前缀
+        String cleanedPath = jobPath;
+        if (cleanedPath.startsWith("[*] ")) {
+            cleanedPath = cleanedPath.substring(4);
+            System.out.println("[JenkinsBrowserDialog] Removed [*] prefix, cleaned path: [" + cleanedPath + "]");
+            logToConsole("Removed [*] prefix from path");
+        }
         
         // 从根节点开始查找
         DefaultMutableTreeNode root = (DefaultMutableTreeNode) treeModel.getRoot();
         if (root == null) {
+            System.out.println("[JenkinsBrowserDialog] ERROR: Root node is null");
             return false;
         }
         
         // 分割路径 - 使用 /job/ 作为分隔符
         // 例如: job/gemini1/job/Manual-Build/job/tools_lock/job/update-bs-bff-version
         // 分割后: ["job", "gemini1", "job", "Manual-Build", "job", "tools_lock", "job", "update-bs-bff-version"]
-        String[] allParts = jobPath.split("/");
+        String[] allParts = cleanedPath.split("/");
+        
+        System.out.println("[JenkinsBrowserDialog] Split path into " + allParts.length + " parts");
+        for (int i = 0; i < allParts.length; i++) {
+            System.out.println("[JenkinsBrowserDialog]   Part[" + i + "]: [" + allParts[i] + "]");
+        }
         
         // 提取实际的job名称（跳过 "job" 关键字）
         java.util.List<String> jobNames = new java.util.ArrayList<>();
@@ -602,6 +620,7 @@ public class JenkinsBrowserDialog extends JDialog {
             }
         }
         
+        System.out.println("[JenkinsBrowserDialog] Extracted " + jobNames.size() + " job names: " + String.join(" -> ", jobNames));
         logToConsole("Extracted job names: " + String.join(" -> ", jobNames));
         
         // 同样处理 baseJobPath
@@ -614,6 +633,7 @@ public class JenkinsBrowserDialog extends JDialog {
             }
         }
         
+        System.out.println("[JenkinsBrowserDialog] Base job names: " + String.join(" -> ", baseJobNames));
         logToConsole("Base job names: " + String.join(" -> ", baseJobNames));
         
         // 跳过与 baseJobPath 匹配的部分
@@ -628,6 +648,7 @@ public class JenkinsBrowserDialog extends JDialog {
             }
             if (baseMatches) {
                 startIndex = baseJobNames.size();
+                System.out.println("[JenkinsBrowserDialog] Base path matches, starting from index: " + startIndex);
                 logToConsole("Skipping base path, starting from index: " + startIndex);
             }
         }
@@ -637,11 +658,13 @@ public class JenkinsBrowserDialog extends JDialog {
             TreePath treePath = new TreePath(treeModel.getPathToRoot(root));
             tree.setSelectionPath(treePath);
             tree.scrollPathToVisible(treePath);
+            System.out.println("[JenkinsBrowserDialog] Selected root node (matches base path)");
             logToConsole("Selected root node (matches base path)");
             return true;
         }
         
         // 递归查找并展开节点
+        System.out.println("[JenkinsBrowserDialog] Starting recursive search from index " + startIndex);
         DefaultMutableTreeNode targetNode = findNodeByJobNames(root, jobNames, startIndex);
         
         if (targetNode != null) {
@@ -652,21 +675,18 @@ public class JenkinsBrowserDialog extends JDialog {
             tree.setSelectionPath(treePath);
             tree.scrollPathToVisible(treePath);
             
-            // 如果节点有详细信息，显示在右侧面板
-            Object userObject = targetNode.getUserObject();
-            if (userObject instanceof JenkinsItem) {
-                JenkinsItem item = (JenkinsItem) userObject;
-                if (!item.isFolder()) {
-                    // 自动打开 Build History 窗口
-                    logToConsole("Auto-opening Build History for: " + item.getName());
-                    openJobDetails(item);
-                }
-            }
-            
+            // 不在这里打开详情对话框！
+            // 因为详情对话框是模态的，会阻塞当前线程，导致navigateToJobPath无法返回
+            // 应该在FavoritesPanel中，等待导航完成后再打开
+            System.out.println("[JenkinsBrowserDialog] Successfully navigated to: " + jobPath);
+            System.out.println("[JenkinsBrowserDialog] Note: Not opening details dialog here to avoid blocking");
+            System.out.println("[JenkinsBrowserDialog] ==========================================");
             logToConsole("Successfully navigated to: " + jobPath);
             return true;
         }
         
+        System.out.println("[JenkinsBrowserDialog] Failed to find job: " + jobPath);
+        System.out.println("[JenkinsBrowserDialog] ==========================================");
         logToConsole("Failed to find job: " + jobPath);
         return false;
     }
@@ -682,18 +702,21 @@ public class JenkinsBrowserDialog extends JDialog {
     private DefaultMutableTreeNode findNodeByJobNames(DefaultMutableTreeNode node, java.util.List<String> jobNames, int index) {
         // 如果已经到达路径末尾，返回当前节点
         if (index >= jobNames.size()) {
+            System.out.println("[JenkinsBrowserDialog] Reached end of path, returning current node");
             return node;
         }
         
         // 获取当前要查找的名称
         String targetName = jobNames.get(index);
         
+        System.out.println("[JenkinsBrowserDialog] findNodeByJobNames: Looking for [" + targetName + "] at index " + index);
         logToConsole("Looking for: " + targetName + " at index " + index);
         
         // 确保子节点已加载 - 这是关键！必须先加载才能查找
         ensureChildrenLoaded(node);
         
         // 在子节点中查找匹配的节点
+        System.out.println("[JenkinsBrowserDialog] Searching among " + node.getChildCount() + " children");
         logToConsole("Searching among " + node.getChildCount() + " children");
         for (int i = 0; i < node.getChildCount(); i++) {
             DefaultMutableTreeNode child = (DefaultMutableTreeNode) node.getChildAt(i);
@@ -701,14 +724,17 @@ public class JenkinsBrowserDialog extends JDialog {
             
             if (userObject instanceof JenkinsItem) {
                 JenkinsItem item = (JenkinsItem) userObject;
+                System.out.println("[JenkinsBrowserDialog]   Child[" + i + "]: [" + item.getName() + "]");
                 logToConsole("  Checking child: " + item.getName());
                 if (item.getName().equals(targetName)) {
+                    System.out.println("[JenkinsBrowserDialog]   ✓ MATCH FOUND! Continuing to next level...");
                     logToConsole("  Found match! Continuing to next level...");
                     
                     // 关键修复：在递归到下一级之前，确保匹配的子节点的子节点也已加载
                     // 这样才能递归加载所有层级，而不是只加载第一层
                     if (index + 1 < jobNames.size()) {
                         // 还有更深的层级需要查找，确保当前匹配节点的子节点已加载
+                        System.out.println("[JenkinsBrowserDialog]   Loading children of matched node before recursing...");
                         logToConsole("  Loading children of matched node before recursing...");
                         ensureChildrenLoaded(child);
                     }
@@ -720,6 +746,7 @@ public class JenkinsBrowserDialog extends JDialog {
         }
         
         // 未找到匹配的节点
+        System.out.println("[JenkinsBrowserDialog] ✗ Could not find: [" + targetName + "]");
         logToConsole("Could not find: " + targetName);
         return null;
     }
@@ -729,6 +756,7 @@ public class JenkinsBrowserDialog extends JDialog {
      * 如果子节点是占位符"Loading..."，则同步加载实际的子节点
      */
     private void ensureChildrenLoaded(DefaultMutableTreeNode node) {
+        System.out.println("[JenkinsBrowserDialog] ensureChildrenLoaded: node has " + node.getChildCount() + " children");
         if (node.getChildCount() == 1) {
             DefaultMutableTreeNode firstChild = (DefaultMutableTreeNode) node.getChildAt(0);
             if ("Loading...".equals(firstChild.getUserObject())) {
@@ -737,15 +765,21 @@ public class JenkinsBrowserDialog extends JDialog {
                 if (userObject instanceof JenkinsItem) {
                     JenkinsItem item = (JenkinsItem) userObject;
                     if (item.isFolder()) {
+                        System.out.println("[JenkinsBrowserDialog] Loading children for folder: " + item.getName());
                         logToConsole("Loading children for folder: " + item.getName());
                         // 同步加载子节点
                         loadChildrenSync(node, item);
                     }
                 } else if (userObject instanceof String) {
                     // 根节点，需要确保已加载
+                    System.out.println("[JenkinsBrowserDialog] Root node detected, children should already be loaded");
                     logToConsole("Root node detected, children should already be loaded");
                 }
+            } else {
+                System.out.println("[JenkinsBrowserDialog] First child is not 'Loading...', it's: " + firstChild.getUserObject());
             }
+        } else {
+            System.out.println("[JenkinsBrowserDialog] Node has " + node.getChildCount() + " children, assuming already loaded");
         }
     }
     
@@ -777,6 +811,25 @@ public class JenkinsBrowserDialog extends JDialog {
             
         } catch (Exception e) {
             logToConsole("ERROR: Failed to load children for navigation: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 打开当前选中节点的详情对话框
+     * 如果选中的是job（非文件夹），则打开Build History
+     */
+    public void openSelectedJobDetails() {
+        TreePath selectedPath = tree.getSelectionPath();
+        if (selectedPath != null) {
+            DefaultMutableTreeNode node = (DefaultMutableTreeNode) selectedPath.getLastPathComponent();
+            if (node != null && node.getUserObject() instanceof JenkinsItem) {
+                JenkinsItem item = (JenkinsItem) node.getUserObject();
+                if (!item.isFolder()) {
+                    System.out.println("[JenkinsBrowserDialog] Opening details for selected job: " + item.getName());
+                    logToConsole("Opening Build History for: " + item.getName());
+                    openJobDetails(item);
+                }
+            }
         }
     }
     

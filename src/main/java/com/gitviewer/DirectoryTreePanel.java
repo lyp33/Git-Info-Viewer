@@ -156,10 +156,10 @@ public class DirectoryTreePanel extends JPanel {
             }
         });
 
-        // 添加树展开监听器，懒加载子节点
-        tree.addTreeWillExpandListener(new javax.swing.event.TreeWillExpandListener() {
+        // 添加树展开监听器，异步懒加载子节点
+        tree.addTreeExpansionListener(new javax.swing.event.TreeExpansionListener() {
             @Override
-            public void treeWillExpand(javax.swing.event.TreeExpansionEvent event) throws javax.swing.tree.ExpandVetoException {
+            public void treeExpanded(javax.swing.event.TreeExpansionEvent event) {
                 DefaultMutableTreeNode node = (DefaultMutableTreeNode) event.getPath().getLastPathComponent();
                 Object userObject = node.getUserObject();
                 
@@ -170,19 +170,15 @@ public class DirectoryTreePanel extends JPanel {
                     if (node.getChildCount() == 1) {
                         DefaultMutableTreeNode firstChild = (DefaultMutableTreeNode) node.getChildAt(0);
                         if ("Loading...".equals(firstChild.getUserObject())) {
-                            // 移除占位节点
-                            treeModel.removeNodeFromParent(firstChild);
-                            // 加载实际的子节点
-                            loadChildren(node, directory);
-                            // 刷新节点
-                            treeModel.nodeStructureChanged(node);
+                            // 异步加载子节点
+                            loadChildrenAsync(node, directory);
                         }
                     }
                 }
             }
 
             @Override
-            public void treeWillCollapse(javax.swing.event.TreeExpansionEvent event) throws javax.swing.tree.ExpandVetoException {
+            public void treeCollapsed(javax.swing.event.TreeExpansionEvent event) {
                 // 不需要处理折叠事件
             }
         });
@@ -484,7 +480,8 @@ public class DirectoryTreePanel extends JPanel {
             }
 
             DefaultMutableTreeNode childNode = new DefaultMutableTreeNode(child);
-            treeModel.insertNodeInto(childNode, parentNode, parentNode.getChildCount());
+            // 使用 add() 而不是 insertNodeInto()，避免逐个触发事件
+            parentNode.add(childNode);
 
             // 如果是目录，递归添加子节点
             if (child.isDirectory()) {
@@ -493,7 +490,7 @@ public class DirectoryTreePanel extends JPanel {
                     buildTree(childNode, child, depth + 1);
                 } else {
                     // 添加一个占位节点，表示该目录有子节点
-                    treeModel.insertNodeInto(new DefaultMutableTreeNode("Loading..."), childNode, 0);
+                    childNode.add(new DefaultMutableTreeNode("Loading..."));
                 }
             }
         }
@@ -526,13 +523,78 @@ public class DirectoryTreePanel extends JPanel {
             }
 
             DefaultMutableTreeNode childNode = new DefaultMutableTreeNode(child);
-            treeModel.insertNodeInto(childNode, parentNode, parentNode.getChildCount());
+            // 使用 add() 而不是 insertNodeInto()，避免逐个触发事件
+            parentNode.add(childNode);
 
             // 如果是目录，添加占位节点
             if (child.isDirectory()) {
-                treeModel.insertNodeInto(new DefaultMutableTreeNode("Loading..."), childNode, 0);
+                childNode.add(new DefaultMutableTreeNode("Loading..."));
             }
         }
+    }
+
+    /**
+     * 异步加载子节点（在后台线程执行文件 I/O，避免阻塞 EDT）
+     */
+    private void loadChildrenAsync(DefaultMutableTreeNode parentNode, File parentFile) {
+        new SwingWorker<java.util.List<File>, Void>() {
+            @Override
+            protected java.util.List<File> doInBackground() {
+                File[] children = parentFile.listFiles();
+                if (children == null) {
+                    return java.util.Collections.emptyList();
+                }
+
+                // 排序：目录在前，文件在后
+                java.util.Arrays.sort(children, (f1, f2) -> {
+                    if (f1.isDirectory() && !f2.isDirectory()) {
+                        return -1;
+                    } else if (!f1.isDirectory() && f2.isDirectory()) {
+                        return 1;
+                    } else {
+                        return f1.getName().compareToIgnoreCase(f2.getName());
+                    }
+                });
+
+                java.util.List<File> result = new java.util.ArrayList<>();
+                for (File child : children) {
+                    if (!child.getName().startsWith(".")) {
+                        result.add(child);
+                    }
+                }
+                return result;
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    java.util.List<File> children = get();
+
+                    // 移除 "Loading..." 占位节点
+                    parentNode.removeAllChildren();
+
+                    // 批量添加子节点（不逐个触发事件）
+                    for (File child : children) {
+                        DefaultMutableTreeNode childNode = new DefaultMutableTreeNode(child);
+                        parentNode.add(childNode);
+
+                        if (child.isDirectory()) {
+                            childNode.add(new DefaultMutableTreeNode("Loading..."));
+                        }
+                    }
+
+                    // 一次性通知模型更新
+                    treeModel.nodeStructureChanged(parentNode);
+
+                    // 确保节点保持展开状态
+                    TreePath path = new TreePath(parentNode.getPath());
+                    tree.expandPath(path);
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }.execute();
     }
 
     /**
@@ -591,6 +653,19 @@ public class DirectoryTreePanel extends JPanel {
             });
             popupMenu.add(openFolderItem);
 
+            // 检查文件所在的目录是否是 Git 项目
+            File gitRepoDir = findGitRepository(selectedFile.getParentFile());
+            if (gitRepoDir != null) {
+                popupMenu.addSeparator();
+                
+                JMenuItem pullItem = new JMenuItem("Pull");
+                pullItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+                pullItem.addActionListener(event -> {
+                    performGitPull(gitRepoDir);
+                });
+                popupMenu.add(pullItem);
+            }
+
         } else if (selectedFile.isDirectory()) {
             // 目录的右键菜单
             
@@ -603,6 +678,21 @@ public class DirectoryTreePanel extends JPanel {
             popupMenu.add(openFolderItem);
 
             popupMenu.addSeparator();
+
+            // 检查是否是 Git 项目
+            boolean isGitRepo = GitInfoExtractor.isGitRepository(selectedFile);
+            
+            // 如果是 Git 项目，添加 Pull 菜单项
+            if (isGitRepo) {
+                JMenuItem pullItem = new JMenuItem("Pull");
+                pullItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+                pullItem.addActionListener(event -> {
+                    performGitPull(selectedFile);
+                });
+                popupMenu.add(pullItem);
+                
+                popupMenu.addSeparator();
+            }
 
             // New Folder 菜单项
             JMenuItem newFolderItem = new JMenuItem("New Folder");
@@ -839,6 +929,93 @@ public class DirectoryTreePanel extends JPanel {
                 refreshListener.onTreeRefreshed();
             }
         }
+    }
+
+    /**
+     * 查找 Git 仓库根目录（向上递归查找）
+     * @param startDir 开始查找的目录
+     * @return Git 仓库根目录，如果不是 Git 项目则返回 null
+     */
+    private File findGitRepository(File startDir) {
+        File current = startDir;
+        while (current != null) {
+            if (GitInfoExtractor.isGitRepository(current)) {
+                return current;
+            }
+            current = current.getParentFile();
+        }
+        return null;
+    }
+
+    /**
+     * 执行 Git Pull 操作
+     */
+    private void performGitPull(File gitDirectory) {
+        // 在后台线程执行 pull 操作
+        Thread pullThread = new Thread(() -> {
+            try {
+                // 显示进度对话框
+                SwingUtilities.invokeLater(() -> {
+                    JOptionPane optionPane = new JOptionPane(
+                        "Pulling latest code from remote repository...",
+                        JOptionPane.INFORMATION_MESSAGE,
+                        JOptionPane.DEFAULT_OPTION,
+                        null,
+                        new Object[]{},
+                        null
+                    );
+                    JDialog dialog = optionPane.createDialog(
+                        SwingUtilities.getWindowAncestor(this),
+                        "Git Pull"
+                    );
+                    dialog.setModal(false);
+                    dialog.setVisible(true);
+                    
+                    // 执行 pull
+                    new Thread(() -> {
+                        boolean success = GitOperations.pull(gitDirectory);
+                        
+                        SwingUtilities.invokeLater(() -> {
+                            dialog.dispose();
+                            
+                            if (success) {
+                                JOptionPane.showMessageDialog(
+                                    SwingUtilities.getWindowAncestor(this),
+                                    "Successfully pulled latest code from remote repository",
+                                    "Pull Successful",
+                                    JOptionPane.INFORMATION_MESSAGE
+                                );
+                                
+                                // 通知刷新监听器
+                                if (refreshListener != null) {
+                                    refreshListener.onTreeRefreshed();
+                                }
+                            } else {
+                                JOptionPane.showMessageDialog(
+                                    SwingUtilities.getWindowAncestor(this),
+                                    "Pull failed. Please check network connection and Git configuration",
+                                    "Pull Failed",
+                                    JOptionPane.ERROR_MESSAGE
+                                );
+                            }
+                        });
+                    }).start();
+                });
+                
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                SwingUtilities.invokeLater(() -> {
+                    JOptionPane.showMessageDialog(
+                        SwingUtilities.getWindowAncestor(this),
+                        "Pull operation error: " + ex.getMessage(),
+                        "Error",
+                        JOptionPane.ERROR_MESSAGE
+                    );
+                });
+            }
+        });
+        pullThread.setDaemon(true);
+        pullThread.start();
     }
 
     /**

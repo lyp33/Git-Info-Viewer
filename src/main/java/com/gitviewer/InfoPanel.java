@@ -350,7 +350,8 @@ public class InfoPanel extends JPanel {
                 addNotGitRepoPanel();
             }
 
-            addSubdirectoriesTable(fileOrDirectory);
+            // 异步加载子目录表格（避免阻塞 EDT）
+            addSubdirectoriesTableAsync(fileOrDirectory);
         }
 
         mainPanel.revalidate();
@@ -646,6 +647,286 @@ public class InfoPanel extends JPanel {
         return panel;
     }
 
+    /**
+     * 异步加载子目录表格
+     * 先显示 "Loading..." 提示，后台扫描 Git 信息，完成后替换为表格
+     */
+    private void addSubdirectoriesTableAsync(File directory) {
+        File[] children = directory.listFiles();
+        if (children == null || children.length == 0) {
+            return;
+        }
+
+        // 过滤并排序非隐藏目录
+        File[] dirs = java.util.Arrays.stream(children)
+            .filter(f -> f.isDirectory() && !f.getName().startsWith("."))
+            .sorted((f1, f2) -> f1.getName().compareToIgnoreCase(f2.getName()))
+            .toArray(File[]::new);
+        if (dirs.length == 0) {
+            return;
+        }
+
+        // 添加 loading 提示面板
+        JPanel loadingPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        loadingPanel.setBackground(PANEL_BG_COLOR);
+        loadingPanel.setBorder(createStyledBorder("Subdirectories"));
+        JLabel loadingLabel = new JLabel("Loading " + dirs.length + " subdirectories...");
+        loadingLabel.setFont(new Font("Segoe UI", Font.ITALIC, 12));
+        loadingLabel.setForeground(new Color(95, 99, 104));
+        loadingPanel.add(loadingLabel);
+        mainPanel.add(loadingPanel);
+        mainPanel.revalidate();
+        mainPanel.repaint();
+
+        // 记录当前目录，用于检测用户是否已切换到其他目录
+        final File requestedDirectory = directory;
+        final File parentGitRoot = findGitRepositoryRoot(directory);
+
+        new SwingWorker<java.util.List<Vector<Object>>, Void>() {
+            // 后台收集的分支数据
+            private Map<String, java.util.List<String>> bgBranchesMap = new HashMap<>();
+
+            @Override
+            protected java.util.List<Vector<Object>> doInBackground() {
+                java.util.List<Vector<Object>> rows = new ArrayList<>();
+
+                for (File child : dirs) {
+                    // 检查是否已被取消（用户切换了目录）
+                    if (isCancelled() || currentDirectory != requestedDirectory) {
+                        return rows;
+                    }
+
+                    Vector<Object> row = new Vector<>();
+                    boolean isGitRepo = GitInfoExtractor.isGitRepository(child);
+
+                    if (isGitRepo) {
+                        row.add(Boolean.FALSE);
+                        row.add(child.getName());
+                        row.add("[Git Repo]");
+
+                        GitInfoExtractor.GitRepositoryInfo repoInfo = GitInfoExtractor.getRepositoryInfo(child);
+                        if (repoInfo != null) {
+                            row.add(repoInfo.getCurrentBranch());
+
+                            java.util.List<String> allBranches = GitOperations.getRemoteBranches(child);
+                            java.util.List<String> displayBranches = new ArrayList<>();
+                            for (String branch : allBranches) {
+                                String displayName = branch.replace("origin/", "");
+                                if (!displayBranches.contains(displayName)) {
+                                    displayBranches.add(displayName);
+                                }
+                            }
+                            bgBranchesMap.put(child.getAbsolutePath(), displayBranches);
+
+                            if (repoInfo.getRemoteUrls() != null && !repoInfo.getRemoteUrls().isEmpty()) {
+                                row.add(extractRemoteName(repoInfo.getRemoteUrls().get(0)));
+                            } else {
+                                row.add("-");
+                            }
+                            if (repoInfo.getLastCommit() != null) {
+                                row.add(formatDate(repoInfo.getLastCommit().getCommitTime()));
+                                row.add(repoInfo.getLastCommit().getAuthor());
+                            } else {
+                                row.add("-");
+                                row.add("-");
+                            }
+                        } else {
+                            row.add("-");
+                            row.add("-");
+                            row.add("-");
+                            row.add("-");
+                        }
+                    } else {
+                        row.add(null);
+                        row.add(child.getName());
+                        row.add("Directory");
+
+                        if (parentGitRoot != null) {
+                            GitInfoExtractor.GitRepositoryInfo repoInfo = GitInfoExtractor.getRepositoryInfo(parentGitRoot);
+                            if (repoInfo != null) {
+                                String relativePath = parentGitRoot.toPath().relativize(child.toPath()).toString().replace("\\", "/");
+                                row.add(relativePath + " @ " + repoInfo.getCurrentBranch());
+                            } else {
+                                row.add("-");
+                            }
+                        } else {
+                            row.add("-");
+                        }
+                        row.add("-");
+                        row.add("-");
+                        row.add("-");
+                    }
+
+                    row.add("Switch");
+                    rows.add(row);
+                }
+                return rows;
+            }
+
+            @Override
+            protected void done() {
+                // 检查用户是否已切换到其他目录
+                if (currentDirectory != requestedDirectory) {
+                    return;
+                }
+
+                try {
+                    java.util.List<Vector<Object>> rows = get();
+
+                    // 移除 loading 面板
+                    mainPanel.remove(loadingPanel);
+
+                    // 将后台收集的分支数据合并到主 map
+                    repoBranchesMap.clear();
+                    repoBranchesMap.putAll(bgBranchesMap);
+
+                    // 构建表格
+                    buildSubdirectoriesTableUI(rows, requestedDirectory);
+
+                    mainPanel.revalidate();
+                    mainPanel.repaint();
+
+                    // 重新应用字体
+                    Font rightFont = AppSettings.getInstance().getRightPanelFont();
+                    updateFont(rightFont);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }.execute();
+    }
+
+    /**
+     * 根据后台收集的行数据构建子目录表格 UI（在 EDT 上执行）
+     */
+    private void buildSubdirectoriesTableUI(java.util.List<Vector<Object>> rows, File directory) {
+        if (rows.isEmpty()) {
+            return;
+        }
+
+        String[] columnNames = {"Select", "Name", "Type", "Branch", "Remote", "Last Modified", "Author", "Action"};
+        tableModel = new NonEditableTableModel(new Object[][]{}, columnNames);
+
+        for (Vector<Object> row : rows) {
+            tableModel.addRow(row);
+        }
+
+        // 以下是原 addSubdirectoriesTable 中构建 UI 的部分
+        JPanel tablePanel = new JPanel(new BorderLayout());
+        tablePanel.setBackground(PANEL_BG_COLOR);
+        tablePanel.setBorder(createStyledBorder("Subdirectories"));
+
+        gitReposTable = new JTable(tableModel) {
+            @Override
+            public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+                Component c = super.prepareRenderer(renderer, row, column);
+                c.setBackground(row % 2 == 0 ? EVEN_ROW_COLOR : ODD_ROW_COLOR);
+                return c;
+            }
+        };
+
+        gitReposTable.setAutoCreateRowSorter(false);
+        gitReposTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        gitReposTable.setRowHeight(32);
+        gitReposTable.setIntercellSpacing(new Dimension(0, 0));
+        gitReposTable.setShowGrid(false);
+        gitReposTable.setSelectionForeground(new Color(60, 64, 67));
+
+        JTableHeader header = gitReposTable.getTableHeader();
+        header.setBackground(HEADER_BG_COLOR);
+        header.setForeground(new Color(95, 99, 104));
+        header.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        header.setReorderingAllowed(false);
+        header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER_COLOR));
+        header.setPreferredSize(new Dimension(header.getPreferredSize().width, 40));
+
+        gitReposTable.getColumnModel().getColumn(0).setPreferredWidth(50);
+        gitReposTable.getColumnModel().getColumn(1).setPreferredWidth(180);
+        gitReposTable.getColumnModel().getColumn(2).setPreferredWidth(90);
+        gitReposTable.getColumnModel().getColumn(3).setPreferredWidth(200);
+        gitReposTable.getColumnModel().getColumn(4).setPreferredWidth(120);
+        gitReposTable.getColumn("Last Modified").setPreferredWidth(150);
+        gitReposTable.getColumn("Author").setPreferredWidth(120);
+        gitReposTable.getColumn("Action").setPreferredWidth(80);
+
+        gitReposTable.getColumnModel().getColumn(0).setCellRenderer(new CheckBoxCellRenderer());
+        gitReposTable.getColumnModel().getColumn(0).setCellEditor(new CheckBoxCellEditor());
+
+        TableColumn selectColumn = gitReposTable.getColumnModel().getColumn(0);
+        selectColumn.setHeaderRenderer(new SelectAllHeaderRenderer());
+
+        header.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                int column = header.columnAtPoint(e.getPoint());
+                if (column == 0) {
+                    toggleSelectAll();
+                }
+            }
+        });
+
+        DefaultTableCellRenderer typeRenderer = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                setHorizontalAlignment(SwingConstants.CENTER);
+                if ("[Git Repo]".equals(value)) {
+                    setForeground(Color.RED);
+                } else {
+                    setForeground(new Color(60, 64, 67));
+                }
+                return c;
+            }
+        };
+        gitReposTable.getColumnModel().getColumn(2).setCellRenderer(typeRenderer);
+
+        gitReposTable.getColumnModel().getColumn(3).setCellRenderer(new BranchCellRenderer());
+        gitReposTable.getColumnModel().getColumn(3).setCellEditor(new BranchCellEditor());
+
+        gitReposTable.getColumnModel().getColumn(7).setCellRenderer(new ButtonCellRenderer());
+        gitReposTable.getColumnModel().getColumn(7).setCellEditor(new ButtonCellEditor());
+
+        JScrollPane tableScroll = new JScrollPane(gitReposTable);
+        tableScroll.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1));
+        tableScroll.setPreferredSize(new Dimension(Integer.MAX_VALUE, Math.min(350, tableModel.getRowCount() * 32 + 40)));
+
+        tablePanel.add(tableScroll, BorderLayout.CENTER);
+        mainPanel.add(tablePanel);
+
+        boolean hasGitRepos = hasGitRepositories();
+
+        if (hasGitRepos) {
+            JPanel batchSwitchPanel = createBatchSwitchPanel();
+            mainPanel.add(batchSwitchPanel);
+
+            JPanel messageSearchPanel = createMessageSearchPanel();
+            mainPanel.add(messageSearchPanel);
+
+            JPanel batchCherryPickPanel = createBatchCherryPickPanel();
+            mainPanel.add(batchCherryPickPanel);
+        }
+
+        gitReposTable.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    int selectedRow = gitReposTable.getSelectedRow();
+                    if (selectedRow != -1) {
+                        String dirPath = getDirectoryPathForRow(selectedRow);
+                        String type = (String) gitReposTable.getValueAt(selectedRow, 2);
+                        if (dirPath != null && "[Git Repo]".equals(type)) {
+                            showRepoDetailsInLog(dirPath);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    /**
+     * 同步加载子目录表格（保留给 refreshNode 等内部调用）
+     */
     private void addSubdirectoriesTable(File directory) {
         File[] children = directory.listFiles();
         if (children == null || children.length == 0) {
