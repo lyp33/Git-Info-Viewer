@@ -80,7 +80,12 @@ public class BuildPackageDialog extends JDialog {
     private List<String> draggedAppNames = new ArrayList<>();  // 批量拖拽的应用名称列表
     private int draggedIndex = -1;
     private FavoriteGroup draggedSourceGroup;  // 拖拽源分组（null表示ungrouped）
-    
+
+    // 队列相关
+    private BuildQueue buildQueue;
+    private PendingDeployPanel pendingDeployPanel;
+    private JButton cancelQueueButton;
+
     /**
      * 构造函数
      * 
@@ -115,8 +120,12 @@ public class BuildPackageDialog extends JDialog {
         loadTenantConfiguration();
         loadAndFilterApplications();
         
-        setSize(900, 750);
+        setSize(1400, 750);
+        setResizable(true);
         setLocationRelativeTo(parent);
+
+        // 加载持久化队列，若有未完成条目则提示恢复
+        SwingUtilities.invokeLater(this::checkAndRestoreQueue);
     }
     
     /**
@@ -142,6 +151,10 @@ public class BuildPackageDialog extends JDialog {
         
         add(mainPanel, BorderLayout.CENTER);
         add(createButtonPanel(), BorderLayout.SOUTH);
+
+        // 追加 PendingDeployPanel 到最右侧
+        pendingDeployPanel = new PendingDeployPanel(null);
+        add(pendingDeployPanel, BorderLayout.EAST);
     }
     
     /**
@@ -416,6 +429,13 @@ public class BuildPackageDialog extends JDialog {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 15, 15));
         panel.setBackground(Color.WHITE);
         
+        // Pause/Resume 按钮（初始隐藏，队列运行时显示）
+        cancelQueueButton = createStyledButton("Pause Queue", new Color(230, 150, 30));
+        cancelQueueButton.setPreferredSize(new Dimension(140, 40));
+        cancelQueueButton.setVisible(false);
+        cancelQueueButton.addActionListener(e -> handlePauseResumeQueue());
+        panel.add(cancelQueueButton);
+
         // Build Package 按钮
         buildPackageButton = createStyledButton("Build Package", new Color(70, 130, 180));
         buildPackageButton.setPreferredSize(new Dimension(150, 40));
@@ -2014,6 +2034,268 @@ public class BuildPackageDialog extends JDialog {
      * 处理Build Package按钮
      * Handle build package button click
      */
+    /**
+     * 检查持久化文件，若有未完成条目则提示用户恢复监控
+     */
+    private void checkAndRestoreQueue() {
+        if (!QueuePersistence.hasUnfinished()) return;
+
+        QueuePersistence.Data data = QueuePersistence.load();
+        List<QueueEntry> unfinished = new ArrayList<>();
+        for (QueueEntry e : data.entries) {
+            QueueEntry.QueueStatus s = e.getStatus();
+            if (s == QueueEntry.QueueStatus.PENDING || s == QueueEntry.QueueStatus.BUILDING) {
+                unfinished.add(e);
+            }
+        }
+        if (unfinished.isEmpty()) return;
+
+        int choice = JOptionPane.showConfirmDialog(this,
+                "Found " + unfinished.size() + " unfinished build queue entries from a previous session.\n" +
+                "Resume monitoring? (No new builds will be triggered, only polling resumes.)",
+                "Resume Build Queue",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE);
+
+        if (choice == JOptionPane.YES_OPTION) {
+            BuildQueue.BuildQueueListener queueListener = new BuildQueue.BuildQueueListener() {
+                @Override
+                public void onEntryStatusChanged(QueueEntry entry) {
+                    pendingDeployPanel.refreshEntry(entry);
+                }
+                @Override
+                public void onQueueCompleted(boolean allSuccess) {
+                    buildPackageButton.setEnabled(true);
+                    buildPackageButton.setText("Build Package");
+                    resetPauseResumeButton();
+                    if (allSuccess) {
+                        JOptionPane.showMessageDialog(BuildPackageDialog.this,
+                                "All groups built successfully!", "Queue Completed", JOptionPane.INFORMATION_MESSAGE);
+                    }
+                }
+                @Override
+                public void onQueueFailed(QueueEntry failedEntry, String failedApp) {
+                    buildPackageButton.setEnabled(true);
+                    buildPackageButton.setText("Build Package");
+                    resetPauseResumeButton();
+                    pendingDeployPanel.showError("Group '" + failedEntry.getGroupName() + "' failed on app: " + failedApp);
+                    JOptionPane.showMessageDialog(BuildPackageDialog.this,
+                            "Build failed!\nGroup: " + failedEntry.getGroupName() + "\nApp: " + failedApp,
+                            "Build Failed", JOptionPane.ERROR_MESSAGE);
+                }
+                @Override
+                public void onPollingError(String errorMessage) {
+                    pendingDeployPanel.showError(errorMessage);
+                }
+            };
+
+            buildQueue = new BuildQueue(data.entries, apiClient, currentToken, currentTenant,
+                    queueListener, data.pollingIntervalSeconds);
+            pendingDeployPanel.setQueue(buildQueue);
+            pendingDeployPanel.setPollingIntervalSeconds(data.pollingIntervalSeconds);
+            pendingDeployPanel.loadEntries(data.entries);
+
+            buildPackageButton.setEnabled(false);
+            buildPackageButton.setText("Building...");
+            cancelQueueButton.setVisible(true);
+
+            buildQueue.resumePolling();
+            logger.info("Build queue restored with {} entries", data.entries.size());
+        }
+    }
+
+    /**
+     * 按 FavoriteGroup 分组返回选中应用，Ungrouped 应用归入 key "Ungrouped"
+     */
+    private java.util.Map<String, List<String>> getSelectedGroupedApps() {
+        java.util.Map<String, List<String>> result = new java.util.LinkedHashMap<>();
+
+        // 遍历每个 FavoriteGroup，收集被选中的应用
+        for (FavoriteGroup group : favoriteGroups) {
+            List<String> selected = new ArrayList<>();
+            for (String appName : group.getAppNames()) {
+                for (JCheckBox cb : favoritedAppCheckboxes) {
+                    if (cb.getText().equals(appName) && cb.isSelected()) {
+                        selected.add(appName);
+                        break;
+                    }
+                }
+            }
+            if (!selected.isEmpty()) {
+                result.put(group.getName(), selected);
+            }
+        }
+
+        // 收集 ungrouped 中被选中的应用
+        List<String> ungroupedSelected = new ArrayList<>();
+        for (String appName : ungroupedFavorites) {
+            for (JCheckBox cb : favoritedAppCheckboxes) {
+                if (cb.getText().equals(appName) && cb.isSelected()) {
+                    ungroupedSelected.add(appName);
+                    break;
+                }
+            }
+        }
+        if (!ungroupedSelected.isEmpty()) {
+            result.put("Ungrouped", ungroupedSelected);
+        }
+
+        return result;
+    }
+
+    /**
+     * 判断是否需要进入队列模式：涉及的 FavoriteGroup 数量 >= 2
+     */
+    private boolean isQueueMode() {
+        java.util.Set<String> involvedGroups = new java.util.HashSet<>();
+        for (JCheckBox cb : favoritedAppCheckboxes) {
+            if (!cb.isSelected()) continue;
+            String appName = cb.getText();
+            for (FavoriteGroup g : favoriteGroups) {
+                if (g.getAppNames().contains(appName)) {
+                    involvedGroups.add(g.getName());
+                    break;
+                }
+            }
+        }
+        return involvedGroups.size() >= 2;
+    }
+
+    /**
+     * 处理 Pause/Resume 按钮点击
+     */
+    private void handlePauseResumeQueue() {
+        if (buildQueue == null) return;
+        if (buildQueue.isPaused()) {
+            buildQueue.resume();
+            cancelQueueButton.setText("Pause Queue");
+            cancelQueueButton.setBackground(new Color(230, 150, 30));
+        } else {
+            buildQueue.pause();
+            cancelQueueButton.setText("Resume Queue");
+            cancelQueueButton.setBackground(new Color(52, 168, 83));
+        }
+    }
+
+    /**
+     * 队列结束时重置 Pause/Resume 按钮到初始状态并隐藏
+     */
+    private void resetPauseResumeButton() {
+        cancelQueueButton.setText("Pause Queue");
+        cancelQueueButton.setBackground(new Color(230, 150, 30));
+        cancelQueueButton.setVisible(false);
+    }
+
+    /**
+     * 创建并启动 BuildQueue
+     */
+    private void startBuildQueue(java.util.Map<String, List<String>> groupedApps) {
+        String branch = ((String) branchComboBox.getSelectedItem()).trim();
+        String version = versionCodeField.getText().trim();
+
+        // 按 group name 字母升序排列，Ungrouped 追加末尾
+        List<QueueEntry> queueEntries = new ArrayList<>();
+        List<String> sortedKeys = new ArrayList<>(groupedApps.keySet());
+        sortedKeys.remove("Ungrouped");
+        java.util.Collections.sort(sortedKeys);
+        sortedKeys.add("Ungrouped"); // 追加末尾（若存在）
+
+        for (String groupName : sortedKeys) {
+            List<String> apps = groupedApps.get(groupName);
+            if (apps == null || apps.isEmpty()) continue;
+            QueueEntry entry = new QueueEntry(groupName, apps, branch, version, currentTenant);
+            queueEntries.add(entry);
+        }
+
+        // 创建 BuildQueueListener
+        BuildQueue.BuildQueueListener queueListener = new BuildQueue.BuildQueueListener() {
+            @Override
+            public void onEntryStatusChanged(QueueEntry entry) {
+                pendingDeployPanel.refreshEntry(entry);
+            }
+
+            @Override
+            public void onQueueCompleted(boolean allSuccess) {
+                buildPackageButton.setEnabled(true);
+                buildPackageButton.setText("Build Package");
+                resetPauseResumeButton();
+                if (allSuccess) {
+                    JOptionPane.showMessageDialog(BuildPackageDialog.this,
+                            "All groups built successfully!",
+                            "Queue Completed",
+                            JOptionPane.INFORMATION_MESSAGE);
+                }
+            }
+
+            @Override
+            public void onQueueFailed(QueueEntry failedEntry, String failedApp) {
+                buildPackageButton.setEnabled(true);
+                buildPackageButton.setText("Build Package");
+                resetPauseResumeButton();
+                pendingDeployPanel.showError("Group '" + failedEntry.getGroupName() + "' failed on app: " + failedApp);
+                JOptionPane.showMessageDialog(BuildPackageDialog.this,
+                        "Build failed!\nGroup: " + failedEntry.getGroupName() + "\nApp: " + failedApp,
+                        "Build Failed",
+                        JOptionPane.ERROR_MESSAGE);
+            }
+
+            @Override
+            public void onPollingError(String errorMessage) {
+                pendingDeployPanel.showError(errorMessage);
+            }
+        };
+
+        // 读取持久化的轮询间隔
+        int pollingInterval = pendingDeployPanel.getPollingIntervalSeconds();
+
+        buildQueue = new BuildQueue(queueEntries, apiClient, currentToken, currentTenant, queueListener, pollingInterval);
+        pendingDeployPanel.setQueue(buildQueue);
+        pendingDeployPanel.loadEntries(queueEntries);
+
+        // 禁用 Build Package 按钮，显示 Cancel Queue 按钮
+        buildPackageButton.setEnabled(false);
+        buildPackageButton.setText("Building...");
+        cancelQueueButton.setVisible(true);
+
+        buildQueue.start();
+        logger.info("BuildQueue started with {} entries", queueEntries.size());
+    }
+
+    /**
+     * 弹出队列确认对话框，列出 group 名称及应用数量
+     */
+    private boolean showQueueConfirmDialog(java.util.Map<String, List<String>> groupedApps) {
+        String branch = (String) branchComboBox.getSelectedItem();
+        String version = versionCodeField.getText().trim();
+
+        StringBuilder msg = new StringBuilder();
+        msg.append("Sequential build queue will be created:\n\n");
+        msg.append("Branch:  ").append(branch).append("\n");
+        msg.append("Version: ").append(version).append("\n\n");
+        msg.append("Build order (alphabetical):\n");
+
+        List<String> sortedKeys = new ArrayList<>(groupedApps.keySet());
+        sortedKeys.remove("Ungrouped");
+        java.util.Collections.sort(sortedKeys);
+        if (groupedApps.containsKey("Ungrouped")) sortedKeys.add("Ungrouped");
+
+        int idx = 1;
+        for (String groupName : sortedKeys) {
+            List<String> apps = groupedApps.get(groupName);
+            if (apps != null && !apps.isEmpty()) {
+                msg.append("  ").append(idx++).append(". ").append(groupName)
+                   .append(" (").append(apps.size()).append(" apps)\n");
+            }
+        }
+
+        int choice = JOptionPane.showConfirmDialog(this,
+                msg.toString(),
+                "Confirm Sequential Build Queue",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.QUESTION_MESSAGE);
+        return choice == JOptionPane.OK_OPTION;
+    }
+
     private void handleBuildPackage() {
         logger.info("=== User Action: Build Package Button Clicked ===");
         
@@ -2021,9 +2303,17 @@ public class BuildPackageDialog extends JDialog {
         if (!validateBuildConfiguration()) {
             return;
         }
-        
-        // 显示确认对话框
-        showConfirmationDialog();
+
+        // 队列模式分叉
+        if (isQueueMode()) {
+            java.util.Map<String, List<String>> groupedApps = getSelectedGroupedApps();
+            if (showQueueConfirmDialog(groupedApps)) {
+                startBuildQueue(groupedApps);
+            }
+        } else {
+            // 原有流程（不变）
+            showConfirmationDialog();
+        }
     }
     
     /**
@@ -2285,7 +2575,20 @@ public class BuildPackageDialog extends JDialog {
     @Override
     public void dispose() {
         logger.info("=== Disposing Build Package Dialog ===");
-        
+
+        // 队列运行中的关闭确认
+        if (buildQueue != null && buildQueue.isRunning()) {
+            int choice = JOptionPane.showConfirmDialog(this,
+                    "A build queue is still running.\nThe queue will stop but its state has been saved.\nClose anyway?",
+                    "Queue Running",
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
+            if (choice != JOptionPane.YES_OPTION) {
+                return;
+            }
+            buildQueue.cancel();
+        }
+
         // 取消正在进行的异步操作
         cancelCurrentWorker();
         

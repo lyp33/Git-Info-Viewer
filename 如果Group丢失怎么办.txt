@@ -1,0 +1,59 @@
+===============================================
+  如果 Build Image 的 Group 丢失怎么办？
+===============================================
+
+【第一步：不要慌张】
+新版本已经有自动备份和恢复机制！
+
+【第二步：检查备份文件】
+1. 打开文件夹：%USERPROFILE%
+2. 查找文件：gitviewer.properties.backup
+3. 如果存在，说明有备份
+
+【第三步：自动恢复】
+方法1：重启应用（推荐）
+- 关闭应用
+- 重新打开
+- 系统会自动尝试从备份恢复
+
+方法2：手动恢复
+- 关闭应用
+- 删除：gitviewer.properties
+- 重命名：gitviewer.properties.backup → gitviewer.properties
+- 重启应用
+
+【第四步：查看日志】
+运行：run-with-console-debug.bat
+查看是否有以下信息：
+- "Verification PASSED" - 保存成功
+- "Attempting to load from backup" - 正在从备份恢复
+- "Successfully loaded X groups from backup" - 恢复成功
+
+【第五步：诊断工具】
+运行：check-group-data.bat
+可以查看当前保存的所有group数据
+
+【预防措施】
+✓ 定期备份 gitviewer.properties 文件
+✓ 使用 run-with-console-debug.bat 启动，监控日志
+✓ 如果看到 "Verification FAILED"，立即检查
+
+【文件位置】
+主配置：%USERPROFILE%\gitviewer.properties
+备份文件：%USERPROFILE%\gitviewer.properties.backup
+
+【联系支持】
+如果以上方法都无法恢复，请提供：
+1. gitviewer.properties 文件内容
+2. gitviewer.properties.backup 文件内容
+3. 控制台日志输出
+
+===============================================
+  新版本的三层保护机制
+===============================================
+
+1. 自动备份：每次保存前自动创建备份
+2. 保存验证：保存后立即验证数据完整性
+3. 自动恢复：加载失败时自动从备份恢复
+
+有了这些保护，group数据丢失的概率已经大大降低！
