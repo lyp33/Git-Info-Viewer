@@ -88,6 +88,10 @@ public class TenantCICDDialog extends JDialog {
     private JTextField refreshIntervalField;
     private javax.swing.Timer autoRefreshTimer;
     private boolean isSearching = false;  // 标记是否正在搜索中
+
+    // Retry link for loadApplicationList timeout
+    private JLabel retryLoadAppsLink;
+    private javax.swing.Timer retryShowTimer;
     
     /**
      * 构造函数
@@ -254,7 +258,25 @@ public class TenantCICDDialog extends JDialog {
         loadingProgressBar.setPreferredSize(new Dimension(100, 20));
         loadingProgressBar.setVisible(false);
         panel.add(loadingProgressBar);
-        
+
+        // Retry link — shown after 8s if loadApplicationList is still running
+        retryLoadAppsLink = new JLabel("<html><u>Retry</u></html>");
+        retryLoadAppsLink.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        retryLoadAppsLink.setForeground(new Color(220, 80, 0));
+        retryLoadAppsLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        retryLoadAppsLink.setVisible(false);
+        retryLoadAppsLink.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                logger.info("Retry link clicked — cancelling current worker and retrying loadApplicationList");
+                stopRetryShowTimer();
+                retryLoadAppsLink.setVisible(false);
+                cancelCurrentWorker();
+                loadApplicationList();
+            }
+        });
+        panel.add(retryLoadAppsLink);
+
         return panel;
     }
     
@@ -1018,6 +1040,15 @@ public class TenantCICDDialog extends JDialog {
         
         // 取消之前的操作
         cancelCurrentWorker();
+
+        // Start 8s timer to reveal the retry link if still loading
+        stopRetryShowTimer();
+        retryShowTimer = new javax.swing.Timer(8000, e -> {
+            retryLoadAppsLink.setVisible(true);
+            logger.info("Retry link shown — loadApplicationList taking too long");
+        });
+        retryShowTimer.setRepeats(false);
+        retryShowTimer.start();
         
         SwingWorker<List<Application>, Void> worker = new SwingWorker<>() {
             @Override
@@ -1027,6 +1058,8 @@ public class TenantCICDDialog extends JDialog {
             
             @Override
             protected void done() {
+                stopRetryShowTimer();
+                retryLoadAppsLink.setVisible(false);
                 hideLoading();
                 try {
                     List<Application> applications = get();
@@ -1882,6 +1915,16 @@ public class TenantCICDDialog extends JDialog {
             logger.info("Cancelling previous worker operation");
             currentWorker.cancel(true);
             currentWorker = null;
+        }
+    }
+
+    /**
+     * 停止重试显示计时器
+     * Stop the retry-show timer if running
+     */
+    private void stopRetryShowTimer() {
+        if (retryShowTimer != null && retryShowTimer.isRunning()) {
+            retryShowTimer.stop();
         }
     }
     

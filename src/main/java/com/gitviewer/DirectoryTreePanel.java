@@ -677,23 +677,6 @@ public class DirectoryTreePanel extends JPanel {
             });
             popupMenu.add(openFolderItem);
 
-            popupMenu.addSeparator();
-
-            // 检查是否是 Git 项目
-            boolean isGitRepo = GitInfoExtractor.isGitRepository(selectedFile);
-            
-            // 如果是 Git 项目，添加 Pull 菜单项
-            if (isGitRepo) {
-                JMenuItem pullItem = new JMenuItem("Pull");
-                pullItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-                pullItem.addActionListener(event -> {
-                    performGitPull(selectedFile);
-                });
-                popupMenu.add(pullItem);
-                
-                popupMenu.addSeparator();
-            }
-
             // New Folder 菜单项
             JMenuItem newFolderItem = new JMenuItem("New Folder");
             newFolderItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
@@ -702,13 +685,112 @@ public class DirectoryTreePanel extends JPanel {
             });
             popupMenu.add(newFolderItem);
 
-            // Checkout New Git Project 菜单项
-            JMenuItem checkoutItem = new JMenuItem("Checkout New Git Project");
+            popupMenu.addSeparator();
+
+            // 检查是否是 Git 项目
+            boolean isGitRepo = GitInfoExtractor.isGitRepository(selectedFile);
+
+            // 如果是 Git 项目，添加 Pull 菜单项
+            if (isGitRepo) {
+                JMenuItem pullItem = new JMenuItem("Pull");
+                pullItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+                pullItem.addActionListener(event -> {
+                    performGitPull(selectedFile);
+                });
+                popupMenu.add(pullItem);
+
+                popupMenu.addSeparator();
+
+                // Commit & Push 菜单项
+                JMenuItem commitPushItem = new JMenuItem("Commit & Push");
+                commitPushItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+                commitPushItem.addActionListener(event -> {
+                    CommitPushDialog dialog = new CommitPushDialog(
+                            (Frame) SwingUtilities.getWindowAncestor(this), selectedFile);
+                    dialog.setVisible(true);
+                });
+                popupMenu.add(commitPushItem);
+
+                // Show Commit Log 菜单项
+                JMenuItem showChangesItem = new JMenuItem("Show Commit Log");
+                showChangesItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+                showChangesItem.addActionListener(event -> {
+                    RepoDetailsDialog dialog = new RepoDetailsDialog(
+                            (Frame) SwingUtilities.getWindowAncestor(this));
+                    dialog.displayRepoDetails(selectedFile);
+                });
+                popupMenu.add(showChangesItem);
+
+                popupMenu.addSeparator();
+            } else {
+                // 非Git目录：检查子目录是否包含 git 仓库
+                java.util.List<File> subRepos = GitOperations.findGitRepositories(selectedFile);
+                if (!subRepos.isEmpty()) {
+                    // Pull 所有子 git 仓库
+                    JMenuItem pullAllItem = new JMenuItem("Git Pull All");
+                    pullAllItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+                    pullAllItem.addActionListener(event -> {
+                        performBatchPull(subRepos);
+                    });
+                    popupMenu.add(pullAllItem);
+
+                    popupMenu.addSeparator();
+
+                    JMenuItem commitPushItem = new JMenuItem("Commit & Push");
+                    commitPushItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+                    commitPushItem.addActionListener(event -> {
+                        CommitPushDialog dialog = new CommitPushDialog(
+                                (Frame) SwingUtilities.getWindowAncestor(this), selectedFile);
+                        dialog.setVisible(true);
+                    });
+                    popupMenu.add(commitPushItem);
+
+                    popupMenu.addSeparator();
+                }
+            }
+
+            // Clone Git Projects 菜单项
+            JMenuItem checkoutItem = new JMenuItem("Clone Git Projects");
             checkoutItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
             checkoutItem.addActionListener(event -> {
                 showCheckoutDialog(selectedFile);
             });
             popupMenu.add(checkoutItem);
+
+            popupMenu.addSeparator();
+
+            // Open CMD 菜单项 - 在当前目录打开 cmd 窗口
+            JMenuItem openCmdItem = new JMenuItem("Open CMD");
+            openCmdItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            openCmdItem.addActionListener(event -> {
+                try {
+                    new ProcessBuilder("cmd.exe", "/c", "start", "cmd.exe")
+                            .directory(selectedFile)
+                            .start();
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this,
+                            "无法打开 CMD: " + ex.getMessage(),
+                            "错误", JOptionPane.ERROR_MESSAGE);
+                }
+            });
+            popupMenu.add(openCmdItem);
+
+            // mvn install 菜单项 - 在当前目录执行 mvn clean install -DskipTests
+            JMenuItem mvnInstallItem = new JMenuItem("mvn install");
+            mvnInstallItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            mvnInstallItem.addActionListener(event -> {
+                try {
+                    new ProcessBuilder("cmd.exe", "/c", "start", "cmd.exe", "/k",
+                            "mvn clean install -DskipTests")
+                            .directory(selectedFile)
+                            .start();
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this,
+                            "无法执行 mvn install: " + ex.getMessage(),
+                            "错误", JOptionPane.ERROR_MESSAGE);
+                }
+            });
+            popupMenu.add(mvnInstallItem);
 
             popupMenu.addSeparator();
 
@@ -1013,6 +1095,69 @@ public class DirectoryTreePanel extends JPanel {
                     );
                 });
             }
+        });
+        pullThread.setDaemon(true);
+        pullThread.start();
+    }
+
+    /**
+     * 批量 Pull 多个 git 仓库
+     */
+    private void performBatchPull(java.util.List<File> repos) {
+        Thread pullThread = new Thread(() -> {
+            // 显示进度对话框
+            JLabel statusLabel = new JLabel("Pulling 0/" + repos.size() + " repositories...");
+            JPanel panel = new JPanel(new BorderLayout(10, 10));
+            panel.setBorder(BorderFactory.createEmptyBorder(15, 20, 15, 20));
+            JProgressBar progressBar = new JProgressBar(0, repos.size());
+            progressBar.setPreferredSize(new Dimension(300, 20));
+            panel.add(statusLabel, BorderLayout.NORTH);
+            panel.add(progressBar, BorderLayout.CENTER);
+
+            JOptionPane optionPane = new JOptionPane(panel,
+                    JOptionPane.INFORMATION_MESSAGE,
+                    JOptionPane.DEFAULT_OPTION,
+                    null, new Object[]{}, null);
+            JDialog dialog = optionPane.createDialog(
+                    SwingUtilities.getWindowAncestor(this), "Pull All Repositories");
+            dialog.setModal(false);
+            dialog.setVisible(true);
+
+            StringBuilder results = new StringBuilder();
+            final int[] successCountRef = {0};
+
+            for (int i = 0; i < repos.size(); i++) {
+                File repo = repos.get(i);
+                final int idx = i + 1;
+                final String repoName = repo.getName();
+                SwingUtilities.invokeLater(() -> {
+                    statusLabel.setText("Pulling " + idx + "/" + repos.size() + ": " + repoName + "...");
+                    progressBar.setValue(idx);
+                });
+
+                boolean success = GitOperations.pull(repo);
+                if (success) {
+                    successCountRef[0]++;
+                    results.append("OK  ").append(repoName).append("\n");
+                } else {
+                    results.append("FAIL  ").append(repoName).append("\n");
+                }
+            }
+
+            final int totalSucceeded = successCountRef[0];
+            SwingUtilities.invokeLater(() -> {
+                dialog.dispose();
+                JOptionPane.showMessageDialog(
+                        SwingUtilities.getWindowAncestor(this),
+                        "Pull completed: " + totalSucceeded + "/" + repos.size() + " succeeded\n\n" + results.toString(),
+                        "Batch Pull Result",
+                        totalSucceeded == repos.size() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE
+                );
+
+                if (totalSucceeded > 0 && refreshListener != null) {
+                    refreshListener.onTreeRefreshed();
+                }
+            });
         });
         pullThread.setDaemon(true);
         pullThread.start();

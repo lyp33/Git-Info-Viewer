@@ -647,22 +647,27 @@ public class BatchCherryPickDialog extends JDialog {
 
                         publish("  ✓ Parsed - Project: " + commitInfo.projectCode + ", Commit: " + commitInfo.commitId);
 
-                        // 查找项目目录
-                        File projectDir = findProjectDirectory(commitInfo.projectCode);
-                        if (projectDir == null) {
-                            publish("  ✗ Project directory not found, skipping");
-                            continue;
-                        }
-
-                        publish("  ✓ Found project directory: " + projectDir.getName());
-
-                        // 获取 commit 信息
-                        CommitTimeInfo timeInfo = getCommitTimeInfo(projectDir, commitInfo.commitId, url);
+                        // 优先通过 GitLab API 获取 commit 信息（source commit 可能不在本地仓库）
+                        CommitTimeInfo timeInfo = getCommitTimeInfoFromApi(commitInfo, url);
                         if (timeInfo != null) {
                             commitTimeInfos.add(timeInfo);
-                            publish("  ✓ Commit time: " + timeInfo.timeString + ", Author: " + timeInfo.author);
+                            publish("  ✓ [API] Commit time: " + timeInfo.timeString + ", Author: " + timeInfo.author);
                         } else {
-                            publish("  ✗ Failed to get commit information");
+                            // API 失败时，回退到本地仓库查找
+                            publish("  ⚠ API lookup failed, trying local repository...");
+                            File projectDir = findProjectDirectory(commitInfo.projectCode);
+                            if (projectDir != null) {
+                                publish("  ✓ Found project directory: " + projectDir.getName());
+                                timeInfo = getCommitTimeInfo(projectDir, commitInfo.commitId, url);
+                                if (timeInfo != null) {
+                                    commitTimeInfos.add(timeInfo);
+                                    publish("  ✓ [Local] Commit time: " + timeInfo.timeString + ", Author: " + timeInfo.author);
+                                } else {
+                                    publish("  ✗ Failed to get commit information (not found in local repo either)");
+                                }
+                            } else {
+                                publish("  ✗ Failed to get commit information (no API token and project directory not found)");
+                            }
                         }
 
                     } catch (Exception e) {
@@ -763,6 +768,108 @@ public class BatchCherryPickDialog extends JDialog {
 
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    /**
+     * 通过 GitLab API 获取 commit 时间信息
+     * 用于 source commit 不在本地仓库的场景（如 merge commit）
+     * API: GET /api/v4/projects/:id/repository/commits/:sha
+     */
+    private CommitTimeInfo getCommitTimeInfoFromApi(CommitInfo commitInfo, String url) {
+        try {
+            String token = AppSettings.getInstance().getGitLabPrivateToken();
+            if (token == null || token.isEmpty()) {
+                System.out.println("[Sort] No GitLab token configured, cannot use API fallback");
+                return null;
+            }
+
+            // 从 baseUrl 中提取 GitLab host 和项目路径
+            // baseUrl 格式: https://gitlab.insuremo.com/gemini/claim-bff
+            Pattern baseUrlPattern = Pattern.compile("(https?://[^/]+)/(.+)");
+            Matcher matcher = baseUrlPattern.matcher(commitInfo.baseUrl);
+            if (!matcher.matches()) {
+                return null;
+            }
+
+            String gitlabHost = matcher.group(1);
+            String projectPath = matcher.group(2);
+
+            // URL encode 项目路径（/ 替换为 %2F）
+            String encodedProjectPath = projectPath.replace("/", "%2F");
+
+            // 构造 API URL
+            String apiUrl = gitlabHost + "/api/v4/projects/" + encodedProjectPath + "/repository/commits/" + commitInfo.commitId;
+            System.out.println("[Sort] GitLab API URL: " + apiUrl);
+
+            String response = GitLabApiClient.executeGet(apiUrl, token);
+            if (response == null || response.isEmpty()) {
+                return null;
+            }
+
+            // 解析 JSON 响应中的 committed_date 和 author_name
+            String committedDate = extractJsonStringValue(response, "committed_date");
+            String authorName = extractJsonStringValue(response, "author_name");
+
+            if (committedDate == null) {
+                return null;
+            }
+
+            // 解析 ISO 8601 日期格式，如 "2026-04-02T10:30:00.000+08:00"
+            long timestamp = parseIso8601Date(committedDate);
+
+            CommitTimeInfo timeInfo = new CommitTimeInfo();
+            timeInfo.url = url;
+            timeInfo.commitId = commitInfo.commitId;
+            timeInfo.timestamp = timestamp;
+            timeInfo.timeString = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(timestamp));
+            timeInfo.author = authorName != null ? authorName : "Unknown";
+
+            return timeInfo;
+
+        } catch (Exception e) {
+            System.out.println("[Sort] GitLab API fallback failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 从 JSON 字符串中提取指定 key 的 string 值
+     */
+    private String extractJsonStringValue(String json, String key) {
+        // 匹配 "key":"value" 或 "key": "value"
+        Pattern pattern = Pattern.compile("\"" + Pattern.quote(key) + "\"\\s*:\\s*\"([^\"]+)\"");
+        Matcher matcher = pattern.matcher(json);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return null;
+    }
+
+    /**
+     * 解析 ISO 8601 日期字符串为毫秒时间戳
+     * 支持格式: 2026-04-02T10:30:00.000+08:00 或 2026-04-02T02:30:00.000Z
+     */
+    private long parseIso8601Date(String dateStr) {
+        try {
+            // 尝试带时区偏移的格式
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
+            return sdf.parse(dateStr).getTime();
+        } catch (Exception e1) {
+            try {
+                // 尝试不带毫秒的格式
+                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX");
+                return sdf.parse(dateStr).getTime();
+            } catch (Exception e2) {
+                try {
+                    // 尝试 Z 结尾的 UTC 格式
+                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+                    sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
+                    return sdf.parse(dateStr).getTime();
+                } catch (Exception e3) {
+                    return 0L;
+                }
+            }
         }
     }
 

@@ -57,7 +57,7 @@ public class CheckoutGitProjectDialog extends JDialog {
     private java.text.SimpleDateFormat logDateFormat = new java.text.SimpleDateFormat("HH:mm:ss");
 
     public CheckoutGitProjectDialog(Frame parent, File targetDirectory) {
-        super(parent, "Checkout New Git Project", true);
+        super(parent, "Clone Git Projects", true);
         this.targetDirectory = targetDirectory;
         initializeUI();
         setLocationRelativeTo(parent);

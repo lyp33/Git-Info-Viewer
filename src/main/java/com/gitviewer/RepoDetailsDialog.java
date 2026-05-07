@@ -17,6 +17,9 @@ public class RepoDetailsDialog extends JDialog {
     private static final Color BORDER_COLOR = new Color(227, 233, 239);
     private static final Color ODD_ROW_COLOR = new Color(255, 255, 255);
     private static final Color EVEN_ROW_COLOR = new Color(245, 248, 250);
+    private static final Color UNPUSHED_ROW_COLOR = new Color(255, 243, 224);
+    private static final Color PUSHED_COLOR = new Color(46, 125, 50);
+    private static final Color LOCAL_COLOR = new Color(230, 126, 34);
 
     private JTable commitsTable;
     private DefaultTableModel tableModel;
@@ -33,6 +36,7 @@ public class RepoDetailsDialog extends JDialog {
     private List<GitInfoExtractor.GitCommitInfo> allCommits; // 存储所有提交记录
     private List<GitInfoExtractor.GitCommitInfo> filteredCommits; // 存储过滤后的提交记录
     private String currentCommitUrl; // 当前显示的commit URL
+    private java.util.Set<String> unpushedCommitIds = new java.util.HashSet<>();
 
     public RepoDetailsDialog(Frame parent) {
         super(parent, "Git Repository Details", true);
@@ -189,14 +193,20 @@ public class RepoDetailsDialog extends JDialog {
         tablePanel.add(topPanel, BorderLayout.NORTH);
 
         // 创建表格
-        String[] columnNames = {"Commit Code", "Date", "Author", "Message"};
+        String[] columnNames = {"Status", "Commit Code", "Date", "Author", "Message"};
         tableModel = new NonEditableTableModel(new Object[][]{}, columnNames);
         commitsTable = new JTable(tableModel) {
             @Override
             public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
                 Component c = super.prepareRenderer(renderer, row, column);
                 if (!isRowSelected(row)) {
-                    c.setBackground(row % 2 == 0 ? EVEN_ROW_COLOR : ODD_ROW_COLOR);
+                    int modelRow = convertRowIndexToModel(row);
+                    String commitId = (String) tableModel.getValueAt(modelRow, 1);
+                    if (unpushedCommitIds.contains(commitId)) {
+                        c.setBackground(UNPUSHED_ROW_COLOR);
+                    } else {
+                        c.setBackground(row % 2 == 0 ? EVEN_ROW_COLOR : ODD_ROW_COLOR);
+                    }
                 }
                 return c;
             }
@@ -220,10 +230,29 @@ public class RepoDetailsDialog extends JDialog {
         header.setPreferredSize(new Dimension(header.getPreferredSize().width, 35));
 
         // 设置列宽
-        commitsTable.getColumnModel().getColumn(0).setPreferredWidth(80);  // Commit Code
-        commitsTable.getColumnModel().getColumn(1).setPreferredWidth(150); // Date
-        commitsTable.getColumnModel().getColumn(2).setPreferredWidth(120); // Author
-        commitsTable.getColumnModel().getColumn(3).setPreferredWidth(450); // Message
+        commitsTable.getColumnModel().getColumn(0).setPreferredWidth(60);  // Status
+        commitsTable.getColumnModel().getColumn(1).setPreferredWidth(80);  // Commit Code
+        commitsTable.getColumnModel().getColumn(2).setPreferredWidth(150); // Date
+        commitsTable.getColumnModel().getColumn(3).setPreferredWidth(120); // Author
+        commitsTable.getColumnModel().getColumn(4).setPreferredWidth(450); // Message
+
+        // Status 列自定义渲染器 - 颜色区分 Pushed/Local
+        commitsTable.getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                setHorizontalAlignment(SwingConstants.CENTER);
+                if ("Local".equals(value)) {
+                    setForeground(LOCAL_COLOR);
+                    setFont(getFont().deriveFont(Font.BOLD));
+                } else {
+                    setForeground(PUSHED_COLOR);
+                    setFont(getFont().deriveFont(Font.PLAIN));
+                }
+                return c;
+            }
+        });
 
         JScrollPane tableScroll = new JScrollPane(commitsTable);
         tableScroll.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1));
@@ -289,7 +318,7 @@ public class RepoDetailsDialog extends JDialog {
                 if (selectedRow >= 0) {
                     // 获取提交ID（考虑排序后的行索引）
                     int modelRow = commitsTable.convertRowIndexToModel(selectedRow);
-                    String shortCommitId = (String) tableModel.getValueAt(modelRow, 0);
+                    String shortCommitId = (String) tableModel.getValueAt(modelRow, 1);
                     loadCommitFiles(shortCommitId);
                 }
             }
@@ -346,12 +375,14 @@ public class RepoDetailsDialog extends JDialog {
     private void updateCommitsTable() {
         tableModel.setRowCount(0);
         shortIdToFullIdMap.clear();
-        
+
         for (GitInfoExtractor.GitCommitInfo commit : filteredCommits) {
             String fullId = commit.getCommitId();
             shortIdToFullIdMap.put(fullId, fullId); // 使用完整ID作为key和value
 
+            String status = unpushedCommitIds.contains(fullId) ? "Local" : "Pushed";
             Object[] row = {
+                status,
                 fullId,  // 显示完整的commit ID作为commit code
                 dateFormat.format(new Date(commit.getCommitTime())),
                 commit.getAuthor(),
@@ -359,7 +390,7 @@ public class RepoDetailsDialog extends JDialog {
             };
             tableModel.addRow(row);
         }
-        
+
         filesTextArea.setText("Showing " + filteredCommits.size() + " commits. Select a commit to see changed files.");
     }
     
@@ -408,10 +439,23 @@ public class RepoDetailsDialog extends JDialog {
         SwingWorker<RepoData, String> worker = new SwingWorker<RepoData, String>() {
             @Override
             protected RepoData doInBackground() throws Exception {
+                publish("Fetching from remote...");
+                try {
+                    GitOperations.fetch(repoDir);
+                } catch (Exception e) {
+                    System.err.println("Fetch failed, continuing with local data: " + e.getMessage());
+                }
+
                 RepoData data = new RepoData();
                 data.repoInfo = GitInfoExtractor.getRepositoryInfo(repoDir);
                 data.commits = GitInfoExtractor.getRecentCommits(repoDir, currentDisplaySize);
+                data.unpushedIds = GitOperations.getUnpushedCommitIds(repoDir);
                 return data;
+            }
+
+            @Override
+            protected void process(List<String> chunks) {
+                filesTextArea.setText(chunks.get(chunks.size() - 1));
             }
 
             @Override
@@ -444,14 +488,19 @@ public class RepoDetailsDialog extends JDialog {
                         }
                     }
 
+                    // 存储未推送的commit IDs
+                    if (data.unpushedIds != null) {
+                        unpushedCommitIds = data.unpushedIds;
+                    }
+
                     // 存储所有提交记录
                     if (data.commits != null) {
                         allCommits.addAll(data.commits);
                         filteredCommits.addAll(data.commits);
-                        
+
                         // 更新Author过滤器
                         updateAuthorFilter();
-                        
+
                         // 更新表格显示
                         updateCommitsTable();
                     }
@@ -541,28 +590,46 @@ public class RepoDetailsDialog extends JDialog {
         }
 
         tableModel.setRowCount(0);
-        filesTextArea.setText("Loading commits...");
+        filesTextArea.setText("Fetching from remote...");
         shortIdToFullIdMap.clear();
         allCommits.clear();
         filteredCommits.clear();
 
-        SwingWorker<List<GitInfoExtractor.GitCommitInfo>, Void> worker = new SwingWorker<List<GitInfoExtractor.GitCommitInfo>, Void>() {
+        SwingWorker<RepoData, String> worker = new SwingWorker<RepoData, String>() {
             @Override
-            protected List<GitInfoExtractor.GitCommitInfo> doInBackground() throws Exception {
-                return GitInfoExtractor.getRecentCommits(currentRepoDir, currentDisplaySize);
+            protected RepoData doInBackground() throws Exception {
+                publish("Fetching from remote...");
+                try {
+                    GitOperations.fetch(currentRepoDir);
+                } catch (Exception e) {
+                    System.err.println("Fetch failed, continuing with local data: " + e.getMessage());
+                }
+
+                RepoData data = new RepoData();
+                data.commits = GitInfoExtractor.getRecentCommits(currentRepoDir, currentDisplaySize);
+                data.unpushedIds = GitOperations.getUnpushedCommitIds(currentRepoDir);
+                return data;
+            }
+
+            @Override
+            protected void process(List<String> chunks) {
+                filesTextArea.setText(chunks.get(chunks.size() - 1));
             }
 
             @Override
             protected void done() {
                 try {
-                    List<GitInfoExtractor.GitCommitInfo> commits = get();
-                    if (commits != null) {
-                        allCommits.addAll(commits);
-                        filteredCommits.addAll(commits);
-                        
+                    RepoData data = get();
+                    if (data.unpushedIds != null) {
+                        unpushedCommitIds = data.unpushedIds;
+                    }
+                    if (data.commits != null) {
+                        allCommits.addAll(data.commits);
+                        filteredCommits.addAll(data.commits);
+
                         // 更新Author过滤器
                         updateAuthorFilter();
-                        
+
                         // 清除当前过滤器
                         clearFilters();
                     }
@@ -671,5 +738,6 @@ public class RepoDetailsDialog extends JDialog {
     private static class RepoData {
         GitInfoExtractor.GitRepositoryInfo repoInfo;
         List<GitInfoExtractor.GitCommitInfo> commits;
+        java.util.Set<String> unpushedIds;
     }
 }

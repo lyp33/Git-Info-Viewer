@@ -11,6 +11,7 @@ public class FavoriteGroup {
     private String name;
     private List<String> appNames;
     private boolean expanded;
+    private boolean selected;  // group 级别的选中状态（独立于 UI checkbox）
     
     /**
      * 构造函数
@@ -58,6 +59,14 @@ public class FavoriteGroup {
     
     public void setExpanded(boolean expanded) {
         this.expanded = expanded;
+    }
+
+    public boolean isSelected() {
+        return selected;
+    }
+
+    public void setSelected(boolean selected) {
+        this.selected = selected;
     }
     
     /**

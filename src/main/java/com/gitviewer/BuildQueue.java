@@ -9,9 +9,42 @@ import javax.swing.*;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class BuildQueue {
     private static final Logger logger = LoggerFactory.getLogger(BuildQueue.class);
+
+    // ===== 全局实例管理 =====
+    // 按 tenant 缓存运行中的 BuildQueue，确保同一租户只有一个实例
+    private static final ConcurrentHashMap<String, BuildQueue> activeQueues = new ConcurrentHashMap<>();
+
+    /**
+     * 获取指定租户当前活跃的 BuildQueue（如果存在且仍在运行）
+     */
+    public static BuildQueue getActiveQueue(String tenant) {
+        BuildQueue q = activeQueues.get(tenant);
+        if (q != null && !q.isRunning()) {
+            activeQueues.remove(tenant);
+            return null;
+        }
+        return q;
+    }
+
+    /**
+     * 注册一个新的活跃 BuildQueue（会替换旧的）
+     */
+    private static void registerActive(String tenant, BuildQueue queue) {
+        activeQueues.put(tenant, queue);
+    }
+
+    /**
+     * 移除活跃 BuildQueue
+     */
+    private static void unregisterActive(String tenant) {
+        activeQueues.remove(tenant);
+    }
+
+    // ===== 实例字段 =====
 
     public interface BuildQueueListener {
         void onEntryStatusChanged(QueueEntry entry);
@@ -24,13 +57,15 @@ public class BuildQueue {
     private final PortalApiClient apiClient;
     private final String token;
     private final String tenant;
-    private final BuildQueueListener listener;
+    private volatile BuildQueueListener listener;
     private int currentIndex = -1;
     private javax.swing.Timer pollingTimer;
     private int pollingIntervalMs;
-    private boolean running = false;
+    private volatile boolean running = false;
     private boolean paused = false;
     private boolean autoPollingEnabled = true;
+    // 恢复模式：只轮询，不提交新 build
+    private boolean monitorOnly = false;
 
     public BuildQueue(List<QueueEntry> entries, PortalApiClient apiClient, String token, String tenant, BuildQueueListener listener) {
         this(entries, apiClient, token, tenant, listener, QueuePersistence.DEFAULT_POLLING_INTERVAL);
@@ -45,11 +80,20 @@ public class BuildQueue {
         this.pollingIntervalMs = Math.max(5, pollingIntervalSeconds) * 1000;
     }
 
+    /**
+     * 替换 listener（dialog 重新打开时绑定新的 UI 回调）
+     */
+    public void setListener(BuildQueueListener listener) {
+        this.listener = listener;
+    }
+
     public void start() {
         if (running) return;
         running = true;
         paused = false;
+        monitorOnly = false;
         logger.info("BuildQueue started, {} entries", entries.size());
+        registerActive(tenant, this);
         persistState();
         executeNext();
     }
@@ -64,13 +108,15 @@ public class BuildQueue {
                 fireEntryStatusChanged(entry);
             }
         }
+        unregisterActive(tenant);
         persistState();
     }
 
     public void pause() {
         if (!running || paused) return;
         paused = true;
-        logger.info("BuildQueue paused");
+        stopTimer();
+        logger.info("BuildQueue paused, polling timer stopped");
     }
 
     public void resume() {
@@ -86,6 +132,7 @@ public class BuildQueue {
 
     public void resumeAutoPolling() {
         autoPollingEnabled = true;
+        if (paused || entries.isEmpty()) return;
         if (currentIndex >= 0 && currentIndex < entries.size()) {
             QueueEntry current = entries.get(currentIndex);
             if (current.getStatus() == QueueEntry.QueueStatus.BUILDING) startTimer();
@@ -97,16 +144,34 @@ public class BuildQueue {
         if (buildingEntry != null) pollBuildStatus(buildingEntry);
     }
 
+    /**
+     * 恢复轮询（从持久化恢复时使用）
+     * monitorOnly 模式：只轮询 BUILDING entry 的状态，不提交 PENDING entry
+     */
     public void resumePolling() {
         running = true;
         paused = false;
+        monitorOnly = true;  // 恢复模式，不提交新 build
+        registerActive(tenant, this);
+        logger.info("BuildQueue resumePolling (monitorOnly=true), {} entries", entries.size());
         for (int i = 0; i < entries.size(); i++) {
             if (entries.get(i).getStatus() == QueueEntry.QueueStatus.BUILDING) { currentIndex = i; startTimer(); return; }
         }
-        for (int i = 0; i < entries.size(); i++) {
-            if (entries.get(i).getStatus() == QueueEntry.QueueStatus.PENDING) { currentIndex = i; return; }
+        // 没有 BUILDING entry，检查是否全部完成
+        boolean allTerminal = entries.stream().allMatch(e -> isTerminalStatus(e.getStatus()));
+        if (allTerminal) {
+            running = false;
+            unregisterActive(tenant);
+            boolean allSuccess = entries.stream().allMatch(e -> e.getStatus() == QueueEntry.QueueStatus.SUCCESS || e.getStatus() == QueueEntry.QueueStatus.CANCELLED);
+            QueuePersistence.delete();
+            fireQueueCompleted(allSuccess);
+        } else {
+            // 还有 PENDING entry 但没有 BUILDING → 说明原实例可能已经丢失
+            // 不自动提交，标记为需要用户手动重新触发
+            logger.warn("resumePolling: found PENDING entries but no BUILDING entry. Waiting for user action.");
+            running = false;
+            unregisterActive(tenant);
         }
-        running = false;
     }
 
     public void setPollingInterval(int seconds) {
@@ -120,11 +185,22 @@ public class BuildQueue {
 
     public boolean isRunning() { return running; }
     public boolean isPaused() { return paused; }
+    public boolean isMonitorOnly() { return monitorOnly; }
     public List<QueueEntry> getEntries() { return new ArrayList<>(entries); }
 
     private void executeNext() {
         if (paused) {
             logger.info("BuildQueue is paused, skipping executeNext");
+            return;
+        }
+        // monitorOnly 模式下不提交新 build，直接结束队列
+        if (monitorOnly) {
+            logger.info("BuildQueue is in monitorOnly mode, not submitting next entry");
+            running = false; stopTimer();
+            unregisterActive(tenant);
+            boolean allSuccess = entries.stream().allMatch(e -> e.getStatus() == QueueEntry.QueueStatus.SUCCESS || e.getStatus() == QueueEntry.QueueStatus.CANCELLED);
+            if (entries.stream().allMatch(e -> isTerminalStatus(e.getStatus()))) QueuePersistence.delete();
+            fireQueueCompleted(allSuccess);
             return;
         }
         int nextIndex = -1;
@@ -133,6 +209,7 @@ public class BuildQueue {
         }
         if (nextIndex == -1) {
             running = false; stopTimer();
+            unregisterActive(tenant);
             boolean allSuccess = entries.stream().allMatch(e -> e.getStatus() == QueueEntry.QueueStatus.SUCCESS || e.getStatus() == QueueEntry.QueueStatus.CANCELLED);
             if (entries.stream().allMatch(e -> isTerminalStatus(e.getStatus()))) QueuePersistence.delete();
             fireQueueCompleted(allSuccess);
@@ -179,6 +256,7 @@ public class BuildQueue {
                     entry.setStatus(QueueEntry.QueueStatus.FAILED);
                     persistState(); fireEntryStatusChanged(entry);
                     running = false;
+                    unregisterActive(tenant);
                     fireQueueFailed(entry, "API submission failed: " + e.getMessage());
                 }
             }
@@ -187,6 +265,10 @@ public class BuildQueue {
     }
 
     private void startTimer() {
+        if (paused || entries.isEmpty()) {
+            logger.info("startTimer skipped: paused={} entries={}", paused, entries.size());
+            return;
+        }
         stopTimer();
         pollingTimer = new javax.swing.Timer(pollingIntervalMs, e -> {
             QueueEntry buildingEntry = findBuildingEntry();
@@ -201,8 +283,6 @@ public class BuildQueue {
     }
 
     private void pollBuildStatus(QueueEntry entry) {
-        // 与主页面 Search 使用相同 API：getBuildResultByApp
-        // creator = portal 登录用户名（邮箱），不过滤 appName，pageSize=50，pageNumber=0
         String creator = AppSettings.getInstance().getPortalUsername();
         logger.info("[Queue Poll] START group='{}' version='{}' creator='{}' apps={}",
                 entry.getGroupName(), entry.getVersion(), creator, entry.getAppNames());
@@ -218,7 +298,6 @@ public class BuildQueue {
                     logger.info("[Queue Poll] API returned {} records for group='{}' version='{}'",
                             allResults.size(), entry.getGroupName(), entry.getVersion());
 
-                    // 遍历所有结果，逐条打印匹配情况
                     List<BuildResult> matched = new ArrayList<>();
                     for (BuildResult r : allResults) {
                         boolean appMatch = entry.getAppNames().contains(r.getAppName());
@@ -238,7 +317,6 @@ public class BuildQueue {
                                 r.getAppName(), r.getBuildStatus(),
                                 isSuccessStatus(r.getBuildStatus()), isFailedStatus(r.getBuildStatus()));
                     }
-                    // 还没匹配到的 app
                     for (String appName : entry.getAppNames()) {
                         boolean found = matched.stream().anyMatch(r -> appName.equals(r.getAppName()));
                         if (!found) {
@@ -257,7 +335,7 @@ public class BuildQueue {
                         logger.info("[Queue Poll] FAILED for group='{}' failedApp='{}'", entry.getGroupName(), failedApp);
                         stopTimer(); entry.setStatus(QueueEntry.QueueStatus.FAILED);
                         persistState(); fireEntryStatusChanged(entry);
-                        running = false; fireQueueFailed(entry, failedApp);
+                        running = false; unregisterActive(tenant); fireQueueFailed(entry, failedApp);
                     } else {
                         logger.info("[Queue Poll] still building, waiting next poll for group='{}'", entry.getGroupName());
                     }
@@ -315,8 +393,20 @@ public class BuildQueue {
         return status == QueueEntry.QueueStatus.SUCCESS || status == QueueEntry.QueueStatus.FAILED || status == QueueEntry.QueueStatus.CANCELLED;
     }
 
-    private void fireEntryStatusChanged(QueueEntry entry) { SwingUtilities.invokeLater(() -> listener.onEntryStatusChanged(entry)); }
-    private void fireQueueCompleted(boolean allSuccess) { SwingUtilities.invokeLater(() -> listener.onQueueCompleted(allSuccess)); }
-    private void fireQueueFailed(QueueEntry failedEntry, String failedApp) { SwingUtilities.invokeLater(() -> listener.onQueueFailed(failedEntry, failedApp)); }
-    private void firePollingError(String errorMessage) { SwingUtilities.invokeLater(() -> listener.onPollingError(errorMessage)); }
+    private void fireEntryStatusChanged(QueueEntry entry) {
+        BuildQueueListener l = listener;
+        if (l != null) SwingUtilities.invokeLater(() -> l.onEntryStatusChanged(entry));
+    }
+    private void fireQueueCompleted(boolean allSuccess) {
+        BuildQueueListener l = listener;
+        if (l != null) SwingUtilities.invokeLater(() -> l.onQueueCompleted(allSuccess));
+    }
+    private void fireQueueFailed(QueueEntry failedEntry, String failedApp) {
+        BuildQueueListener l = listener;
+        if (l != null) SwingUtilities.invokeLater(() -> l.onQueueFailed(failedEntry, failedApp));
+    }
+    private void firePollingError(String errorMessage) {
+        BuildQueueListener l = listener;
+        if (l != null) SwingUtilities.invokeLater(() -> l.onPollingError(errorMessage));
+    }
 }

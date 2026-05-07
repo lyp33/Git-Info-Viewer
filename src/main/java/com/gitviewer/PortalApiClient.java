@@ -259,7 +259,7 @@ public class PortalApiClient {
         
         // 构建请求头
         Map<String, String> headers = new HashMap<>();
-        headers.put("x-mo-targeenant", tenantCode);
+        headers.put("x-mo-target-tenant", tenantCode);
         headers.put("authorization", "Bearer " + token);
         headers.put("Accept", "application/json");
         

@@ -14,24 +14,30 @@ import java.util.List;
 
 /**
  * 队列持久化工具类
- * 负责将 Build Queue 状态读写到本地 JSON 文件
- * 文件路径：~/.gitviewer/pending_build_queue.json
- * JSON 格式：{ "pollingIntervalSeconds": 10, "entries": [...] }
+ * 按租户隔离，每个租户一个独立文件
+ * 文件路径：~/.gitviewer/pending_build_queue_{tenant}.json
  */
 public class QueuePersistence {
 
     private static final Logger logger = LoggerFactory.getLogger(QueuePersistence.class);
 
-    /** 持久化文件路径 */
-    public static final String FILE_PATH =
-            System.getProperty("user.home") + "/.gitviewer/pending_build_queue.json";
+    private static final String DIR_PATH = System.getProperty("user.home") + "/.gitviewer";
 
     /** 默认轮询间隔（秒） */
     public static final int DEFAULT_POLLING_INTERVAL = 20;
 
+    /** 兼容旧版单文件路径（迁移用） */
+    private static final String LEGACY_FILE_PATH = DIR_PATH + "/pending_build_queue.json";
+
     /**
-     * load() 的返回值，包含条目列表和轮询间隔
+     * 获取指定租户的持久化文件路径
      */
+    private static String filePath(String tenant) {
+        // 清理 tenant 名称中的特殊字符，避免文件名问题
+        String safeTenant = tenant.replaceAll("[^a-zA-Z0-9_\\-.]", "_");
+        return DIR_PATH + "/pending_build_queue_" + safeTenant + ".json";
+    }
+
     public static class Data {
         public final List<QueueEntry> entries;
         public final int pollingIntervalSeconds;
@@ -43,22 +49,18 @@ public class QueuePersistence {
     }
 
     /**
-     * 将队列条目和轮询间隔序列化并覆盖写入持久化文件
-     *
-     * @param entries                队列条目列表
-     * @param pollingIntervalSeconds 轮询间隔（秒）
+     * 保存指定租户的队列数据
      */
-    public static void save(List<QueueEntry> entries, int pollingIntervalSeconds) {
+    public static void save(String tenant, List<QueueEntry> entries, int pollingIntervalSeconds) {
         try {
-            // 确保目录存在
-            File file = new File(FILE_PATH);
+            File file = new File(filePath(tenant));
             File dir = file.getParentFile();
             if (!dir.exists()) {
                 dir.mkdirs();
             }
 
-            // 构建顶层 JSON 对象
             JSONObject root = new JSONObject();
+            root.put("tenant", tenant);
             root.put("pollingIntervalSeconds", pollingIntervalSeconds);
 
             JSONArray arr = new JSONArray();
@@ -67,29 +69,126 @@ public class QueuePersistence {
             }
             root.put("entries", arr);
 
-            // 写入文件
             try (FileWriter writer = new FileWriter(file)) {
                 writer.write(root.toString(2));
             }
 
-            logger.debug("Queue persisted: {} entries, pollingInterval={}s", entries.size(), pollingIntervalSeconds);
+            logger.debug("Queue persisted for tenant '{}': {} entries", tenant, entries.size());
         } catch (IOException e) {
-            logger.error("Failed to save queue persistence file: {}", FILE_PATH, e);
+            logger.error("Failed to save queue for tenant '{}': {}", tenant, e.getMessage());
         }
     }
 
     /**
-     * 从持久化文件读取队列数据
-     * 文件不存在时返回空列表和默认轮询间隔
-     *
-     * @return Data 对象（entries + pollingIntervalSeconds）
+     * 兼容旧版无 tenant 参数的 save（供未改造的调用方过渡使用）
      */
-    public static Data load() {
-        File file = new File(FILE_PATH);
+    public static void save(List<QueueEntry> entries, int pollingIntervalSeconds) {
+        // 从 entries 中提取 tenant
+        String tenant = entries.stream()
+                .map(QueueEntry::getTenant)
+                .filter(t -> t != null && !t.isEmpty())
+                .findFirst()
+                .orElse("unknown");
+        save(tenant, entries, pollingIntervalSeconds);
+    }
+
+    /**
+     * 加载指定租户的队列数据
+     */
+    public static Data load(String tenant) {
+        File file = new File(filePath(tenant));
         if (!file.exists()) {
+            // 尝试从旧版单文件迁移
+            return tryLoadLegacy(tenant);
+        }
+        return readFile(file);
+    }
+
+    /**
+     * 判断指定租户是否有未完成条目
+     */
+    public static boolean hasUnfinished(String tenant) {
+        Data data = load(tenant);
+        for (QueueEntry entry : data.entries) {
+            QueueEntry.QueueStatus s = entry.getStatus();
+            if (s == QueueEntry.QueueStatus.PENDING || s == QueueEntry.QueueStatus.BUILDING) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 删除指定租户的持久化文件
+     */
+    public static void delete(String tenant) {
+        File file = new File(filePath(tenant));
+        if (file.exists()) {
+            if (file.delete()) {
+                logger.debug("Queue file deleted for tenant '{}'", tenant);
+            } else {
+                logger.warn("Failed to delete queue file for tenant '{}'", tenant);
+            }
+        }
+    }
+
+    // ===== 兼容旧版 =====
+
+    /**
+     * 尝试从旧版单文件中加载匹配 tenant 的条目
+     */
+    private static Data tryLoadLegacy(String tenant) {
+        File legacyFile = new File(LEGACY_FILE_PATH);
+        if (!legacyFile.exists()) {
             return new Data(new ArrayList<>(), DEFAULT_POLLING_INTERVAL);
         }
 
+        Data allData = readFile(legacyFile);
+        // 过滤出属于该 tenant 的条目
+        List<QueueEntry> tenantEntries = new ArrayList<>();
+        for (QueueEntry e : allData.entries) {
+            if (tenant.equals(e.getTenant())) {
+                tenantEntries.add(e);
+            }
+        }
+
+        if (!tenantEntries.isEmpty()) {
+            logger.info("Migrated {} entries from legacy file for tenant '{}'", tenantEntries.size(), tenant);
+            // 迁移：保存到新文件，然后清理旧文件中该 tenant 的数据
+            save(tenant, tenantEntries, allData.pollingIntervalSeconds);
+        }
+
+        return new Data(tenantEntries, allData.pollingIntervalSeconds);
+    }
+
+    /**
+     * 兼容旧版无 tenant 参数的方法
+     */
+    public static boolean hasUnfinished() {
+        // 旧版：扫描旧文件
+        File legacyFile = new File(LEGACY_FILE_PATH);
+        if (legacyFile.exists()) {
+            Data data = readFile(legacyFile);
+            for (QueueEntry entry : data.entries) {
+                QueueEntry.QueueStatus s = entry.getStatus();
+                if (s == QueueEntry.QueueStatus.PENDING || s == QueueEntry.QueueStatus.BUILDING) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public static void delete() {
+        File legacyFile = new File(LEGACY_FILE_PATH);
+        if (legacyFile.exists()) {
+            legacyFile.delete();
+        }
+    }
+
+    // ===== 内部工具方法 =====
+
+    private static Data readFile(File file) {
         try (FileReader reader = new FileReader(file)) {
             StringBuilder sb = new StringBuilder();
             char[] buf = new char[4096];
@@ -108,51 +207,13 @@ public class QueuePersistence {
                     entries.add(jsonToEntry(arr.getJSONObject(i)));
                 }
             }
-
-            logger.debug("Queue loaded: {} entries, pollingInterval={}s", entries.size(), pollingInterval);
             return new Data(entries, pollingInterval);
         } catch (Exception e) {
-            logger.error("Failed to load queue persistence file: {}", FILE_PATH, e);
+            logger.error("Failed to read queue file: {}", file.getPath(), e);
             return new Data(new ArrayList<>(), DEFAULT_POLLING_INTERVAL);
         }
     }
 
-    /**
-     * 删除持久化文件
-     */
-    public static void delete() {
-        File file = new File(FILE_PATH);
-        if (file.exists()) {
-            boolean deleted = file.delete();
-            if (deleted) {
-                logger.debug("Queue persistence file deleted: {}", FILE_PATH);
-            } else {
-                logger.warn("Failed to delete queue persistence file: {}", FILE_PATH);
-            }
-        }
-    }
-
-    /**
-     * 判断持久化文件中是否存在未完成的条目（PENDING 或 BUILDING）
-     *
-     * @return true 表示存在未完成条目
-     */
-    public static boolean hasUnfinished() {
-        Data data = load();
-        for (QueueEntry entry : data.entries) {
-            QueueEntry.QueueStatus s = entry.getStatus();
-            if (s == QueueEntry.QueueStatus.PENDING || s == QueueEntry.QueueStatus.BUILDING) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    // ===== 私有序列化辅助方法 =====
-
-    /**
-     * 将 QueueEntry 序列化为 JSONObject
-     */
     private static JSONObject entryToJson(QueueEntry entry) {
         JSONObject obj = new JSONObject();
         obj.put("groupName", entry.getGroupName() != null ? entry.getGroupName() : "");
@@ -169,13 +230,9 @@ public class QueuePersistence {
             }
         }
         obj.put("appNames", apps);
-
         return obj;
     }
 
-    /**
-     * 将 JSONObject 反序列化为 QueueEntry
-     */
     private static QueueEntry jsonToEntry(JSONObject obj) {
         QueueEntry entry = new QueueEntry();
         entry.setGroupName(obj.optString("groupName", ""));
@@ -184,7 +241,6 @@ public class QueuePersistence {
         entry.setTenant(obj.optString("tenant", ""));
         entry.setTriggeredAt(obj.optString("triggeredAt", ""));
 
-        // 解析状态枚举，未知值默认 PENDING
         String statusStr = obj.optString("status", QueueEntry.QueueStatus.PENDING.name());
         try {
             entry.setStatus(QueueEntry.QueueStatus.valueOf(statusStr));
@@ -192,7 +248,6 @@ public class QueuePersistence {
             entry.setStatus(QueueEntry.QueueStatus.PENDING);
         }
 
-        // 解析应用名称列表
         List<String> appNames = new ArrayList<>();
         JSONArray apps = obj.optJSONArray("appNames");
         if (apps != null) {
@@ -201,7 +256,6 @@ public class QueuePersistence {
             }
         }
         entry.setAppNames(appNames);
-
         return entry;
     }
 }

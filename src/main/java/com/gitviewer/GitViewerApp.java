@@ -367,8 +367,12 @@ public class GitViewerApp extends JFrame {
      * 显示搜索对话框
      */
     private void showSearchDialog() {
-        File rootDir = directoryTreePanel.getRootDirectory();
-        if (rootDir == null) {
+        // 优先使用左侧树当前选中的目录，没有则回退到根目录
+        File searchDir = directoryTreePanel.getSelectedDirectory();
+        if (searchDir == null) {
+            searchDir = directoryTreePanel.getRootDirectory();
+        }
+        if (searchDir == null) {
             JOptionPane.showMessageDialog(
                 this,
                 "Please select a root directory first.\n(File -> Select Root Directory...)",
@@ -380,7 +384,7 @@ public class GitViewerApp extends JFrame {
         
         // 如果搜索对话框不存在或已关闭，创建新的
         if (searchDialog == null || !searchDialog.isVisible()) {
-            searchDialog = new FileSearchDialog(this, rootDir);
+            searchDialog = new FileSearchDialog(this, searchDir);
             searchDialog.setFileSelectionListener(file -> {
                 // 在左侧树中定位并选中文件
                 directoryTreePanel.selectAndRevealFile(file);

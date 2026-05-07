@@ -1054,6 +1054,91 @@ public class AppSettings {
     }
     
     /**
+     * 获取租户的版本代码历史记录
+     * Get version code history for tenant (newest first, max 20)
+     */
+    public List<String> getVersionCodeHistory(String tenantCode) {
+        List<String> history = new ArrayList<>();
+        if (tenantCode == null || tenantCode.isEmpty()) {
+            return history;
+        }
+
+        Properties props = new Properties();
+        File file = new File(System.getProperty("user.home"), SETTINGS_FILE);
+
+        if (file.exists()) {
+            try (FileInputStream fis = new FileInputStream(file)) {
+                props.load(fis);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        String key = "portal.tenant." + tenantCode + ".versionHistory";
+        String value = props.getProperty(key, "");
+        if (!value.isEmpty()) {
+            String[] parts = value.split(",");
+            for (String part : parts) {
+                String trimmed = part.trim();
+                if (!trimmed.isEmpty()) {
+                    history.add(trimmed);
+                }
+            }
+        }
+
+        return history;
+    }
+
+    /**
+     * 添加版本代码到历史记录
+     * Add version code to history (dedup, prepend, trim to 20)
+     */
+    public void addVersionCodeHistory(String tenantCode, String versionCode) {
+        if (tenantCode == null || tenantCode.isEmpty() || versionCode == null || versionCode.trim().isEmpty()) {
+            return;
+        }
+
+        versionCode = versionCode.trim();
+
+        Properties props = new Properties();
+        File file = new File(System.getProperty("user.home"), SETTINGS_FILE);
+
+        if (file.exists()) {
+            try (FileInputStream fis = new FileInputStream(file)) {
+                props.load(fis);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        String key = "portal.tenant." + tenantCode + ".versionHistory";
+        List<String> history = new ArrayList<>();
+
+        String value = props.getProperty(key, "");
+        if (!value.isEmpty()) {
+            for (String part : value.split(",")) {
+                String trimmed = part.trim();
+                if (!trimmed.isEmpty() && !trimmed.equals(versionCode)) {
+                    history.add(trimmed);
+                }
+            }
+        }
+
+        history.add(0, versionCode);
+        if (history.size() > 20) {
+            history = history.subList(0, 20);
+        }
+
+        props.setProperty(key, String.join(",", history));
+
+        try (FileOutputStream fos = new FileOutputStream(file)) {
+            props.store(fos, "Git Viewer Settings");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
      * 创建配置文件备份
      * Create backup of settings file
      */

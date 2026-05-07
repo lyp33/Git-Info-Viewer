@@ -62,7 +62,7 @@ public class PendingDeployPanel extends JPanel {
         controlRow.setBackground(BG_COLOR);
         controlRow.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        autoPollingCheckbox = new JCheckBox("Auto Polling");
+        autoPollingCheckbox = new JCheckBox("Auto Refresh");
         autoPollingCheckbox.setSelected(true);
         autoPollingCheckbox.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 12));
         autoPollingCheckbox.setBackground(BG_COLOR);
@@ -87,6 +87,15 @@ public class PendingDeployPanel extends JPanel {
             @Override public void mouseClicked(java.awt.event.MouseEvent e) { handleManualRefresh(); }
         });
         controlRow.add(refreshLink);
+
+        JLabel clearAllLink = new JLabel("<html><u>Clear All</u></html>");
+        clearAllLink.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 12));
+        clearAllLink.setForeground(new Color(180, 60, 60));
+        clearAllLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        clearAllLink.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override public void mouseClicked(java.awt.event.MouseEvent e) { handleClearAll(); }
+        });
+        controlRow.add(clearAllLink);
         bar.add(controlRow);
 
         errorBanner = new JLabel();
@@ -148,6 +157,8 @@ public class PendingDeployPanel extends JPanel {
         listPanel.removeAll();
         listPanel.add(emptyLabel);
         updateEmptyState();
+        // 没有 entry 时停止轮询
+        if (queue != null) queue.pausePolling();
         revalidate(); repaint();
     }
 
@@ -199,12 +210,29 @@ public class PendingDeployPanel extends JPanel {
         int seconds = getPollingIntervalSeconds();
         pollingIntervalField.setText(String.valueOf(seconds));
         queue.setPollingInterval(seconds);
-        QueuePersistence.save(queue.getEntries(), seconds);
+        // 从 entries 中提取 tenant 进行持久化
+        String tenant = queue.getEntries().stream()
+                .map(QueueEntry::getTenant).filter(t -> t != null && !t.isEmpty())
+                .findFirst().orElse("unknown");
+        QueuePersistence.save(tenant, queue.getEntries(), seconds);
     }
 
     private void handleManualRefresh() {
         hideError();
         if (queue != null) queue.manualRefresh();
+    }
+
+    private void handleClearAll() {
+        if (queue != null) queue.cancel();
+        clearEntries();
+        hideError();
+        // 删除当前队列对应租户的持久化文件
+        if (queue != null) {
+            String tenant = queue.getEntries().stream()
+                    .map(QueueEntry::getTenant).filter(t -> t != null && !t.isEmpty())
+                    .findFirst().orElse(null);
+            if (tenant != null) QueuePersistence.delete(tenant);
+        }
     }
 
     private void startAnimationTimer() {
@@ -240,9 +268,11 @@ public class PendingDeployPanel extends JPanel {
             infoPanel = new JPanel();
             infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
             infoPanel.setBackground(Color.WHITE);
+            infoPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
             JPanel nameRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
             nameRow.setBackground(Color.WHITE);
+            nameRow.setAlignmentX(Component.LEFT_ALIGNMENT);
 
             JLabel nameLabel = new JLabel(entry.getGroupName());
             nameLabel.setFont(new Font("Microsoft YaHei UI", Font.BOLD, 12));
@@ -263,12 +293,17 @@ public class PendingDeployPanel extends JPanel {
             JLabel detailLabel = new JLabel("branch: " + entry.getBranch() + "  ver: " + entry.getVersion());
             detailLabel.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 10));
             detailLabel.setForeground(new Color(150, 150, 150));
+            detailLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
             infoPanel.add(detailLabel);
 
             // 初始渲染 app 子行
             refreshAppStatusRows();
 
-            p.add(infoPanel, BorderLayout.CENTER);
+            // 用 wrapper 让 infoPanel 靠上显示，避免 BorderLayout.CENTER 垂直居中
+            JPanel infoPanelWrapper = new JPanel(new BorderLayout());
+            infoPanelWrapper.setBackground(Color.WHITE);
+            infoPanelWrapper.add(infoPanel, BorderLayout.NORTH);
+            p.add(infoPanelWrapper, BorderLayout.CENTER);
 
             JButton deleteBtn = new JButton("x");
             deleteBtn.setFont(new Font("Microsoft YaHei UI", Font.BOLD, 12));
@@ -337,6 +372,7 @@ public class PendingDeployPanel extends JPanel {
                 JLabel appLabel = new JLabel(displayText);
                 appLabel.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 11));
                 appLabel.setForeground(color);
+                appLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
                 infoPanel.add(appLabel);
             }
         }
@@ -366,7 +402,8 @@ public class PendingDeployPanel extends JPanel {
             listPanel.revalidate(); listPanel.repaint();
             List<QueueEntry> remaining = new ArrayList<>();
             for (EntryRow r : entryRows) remaining.add(r.entry);
-            QueuePersistence.save(remaining, getPollingIntervalSeconds());
+            String tenant = entry.getTenant() != null ? entry.getTenant() : "unknown";
+            QueuePersistence.save(tenant, remaining, getPollingIntervalSeconds());
             logger.info("Entry removed from panel: {}", entry.getGroupName());
         }
     }

@@ -135,6 +135,15 @@ public class BuildPackageDialog extends JDialog {
     private void initializeUI() {
         setLayout(new BorderLayout(10, 10));
         getContentPane().setBackground(Color.WHITE);
+
+        // 窗口 X 按钮也走 dispose() 逻辑，确保 BuildQueue 被正确清理
+        setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                dispose();
+            }
+        });
         
         // 创建主面板
         JPanel mainPanel = new JPanel();
@@ -224,7 +233,31 @@ public class BuildPackageDialog extends JDialog {
             }
         });
         titlePanel.add(versionPatternLink);
-        
+
+        // History link
+        JLabel historyLink = new JLabel("<html><u>...</u></html>");
+        historyLink.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 12));
+        historyLink.setForeground(new Color(70, 130, 180));
+        historyLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        historyLink.setToolTipText("Click to view version code history");
+        historyLink.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                showVersionHistoryPopup();
+            }
+
+            @Override
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                historyLink.setForeground(new Color(50, 100, 150));
+            }
+
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                historyLink.setForeground(new Color(70, 130, 180));
+            }
+        });
+        titlePanel.add(historyLink);
+
         panel.add(titlePanel, BorderLayout.NORTH);
         
         versionCodeField = new JTextField();
@@ -669,7 +702,84 @@ public class BuildPackageDialog extends JDialog {
             }
         }
     }
-    
+
+    /**
+     * 显示版本代码历史记录弹窗
+     * Show version code history popup for user to select and reuse
+     */
+    private void showVersionHistoryPopup() {
+        logger.info("=== User Action: Version History Link Clicked ===");
+
+        List<String> history = AppSettings.getInstance().getVersionCodeHistory(currentTenant);
+
+        if (history.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                "No version code history yet.",
+                "Version Code History",
+                JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        // Create popup dialog
+        JDialog historyDialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this),
+            "Version Code History", true);
+        historyDialog.setSize(500, 400);
+        historyDialog.setLocationRelativeTo(this);
+        historyDialog.setLayout(new BorderLayout(10, 10));
+
+        // List model
+        DefaultListModel<String> listModel = new DefaultListModel<>();
+        for (String code : history) {
+            listModel.addElement(code);
+        }
+        JList<String> historyList = new JList<>(listModel);
+        historyList.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 12));
+        historyList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        historyList.setCellRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                    boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
+                return this;
+            }
+        });
+
+        // Double-click to select
+        historyList.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    String selected = historyList.getSelectedValue();
+                    if (selected != null) {
+                        versionCodeField.setText(selected);
+                        logger.info("Selected version code from history: {}", selected);
+                        historyDialog.dispose();
+                    }
+                }
+            }
+        });
+
+        JScrollPane scrollPane = new JScrollPane(historyList);
+        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(218, 220, 224), 1));
+
+        // Header label
+        JLabel headerLabel = new JLabel("  Double-click to select:");
+        headerLabel.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 12));
+        headerLabel.setForeground(new Color(128, 134, 139));
+        headerLabel.setBorder(BorderFactory.createEmptyBorder(5, 0, 0, 0));
+
+        historyDialog.add(headerLabel, BorderLayout.NORTH);
+        historyDialog.add(scrollPane, BorderLayout.CENTER);
+
+        // Style
+        historyDialog.getContentPane().setBackground(Color.WHITE);
+        ((JPanel) historyDialog.getContentPane()).setBorder(
+            BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        historyDialog.setVisible(true);
+    }
+
     /**
      * 加载租户配置
      * Load tenant configuration including branch list
@@ -1002,6 +1112,7 @@ public class BuildPackageDialog extends JDialog {
             
             if (app != null) {
                 JCheckBox checkbox = new JCheckBox(app.getAppName());
+                checkbox.setSelected(group.isSelected());  // 继承 group 的选中状态
                 checkbox.setFont(new Font("Microsoft YaHei UI", Font.PLAIN, 12));
                 checkbox.setBackground(Color.WHITE);
                 checkbox.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));  // 减少checkbox内边距
@@ -1028,8 +1139,11 @@ public class BuildPackageDialog extends JDialog {
      */
     private void handleGroupCheckboxChanged(FavoriteGroup group, boolean selected) {
         logger.info("Group '{}' checkbox changed to: {}", group.getName(), selected);
-        
-        // 勾选/取消勾选该组下所有应用
+
+        // 更新数据层选中状态
+        group.setSelected(selected);
+
+        // 同步已渲染的 app checkbox（展开状态下可见）
         for (JCheckBox checkbox : favoritedAppCheckboxes) {
             if (group.containsApp(checkbox.getText())) {
                 checkbox.setSelected(selected);
@@ -2035,62 +2149,50 @@ public class BuildPackageDialog extends JDialog {
      * Handle build package button click
      */
     /**
-     * 检查持久化文件，若有未完成条目则提示用户恢复监控
+     * 检查是否有当前租户的活跃队列或持久化的未完成条目，恢复监控
      */
     private void checkAndRestoreQueue() {
-        if (!QueuePersistence.hasUnfinished()) return;
+        // 1. 优先检查内存中是否有当前租户的活跃 BuildQueue（dialog 关了但 queue 还在跑）
+        BuildQueue activeQueue = BuildQueue.getActiveQueue(currentTenant);
+        if (activeQueue != null && activeQueue.isRunning()) {
+            logger.info("Found active in-memory BuildQueue for tenant '{}', rebinding UI", currentTenant);
+            buildQueue = activeQueue;
+            buildQueue.setListener(createQueueListener());
+            pendingDeployPanel.setQueue(buildQueue);
+            pendingDeployPanel.loadEntries(buildQueue.getEntries());
 
-        QueuePersistence.Data data = QueuePersistence.load();
-        List<QueueEntry> unfinished = new ArrayList<>();
+            buildPackageButton.setEnabled(false);
+            buildPackageButton.setText("Building...");
+            cancelQueueButton.setVisible(true);
+            return;
+        }
+
+        // 2. 从持久化文件恢复（进程重启的场景）
+        if (!QueuePersistence.hasUnfinished(currentTenant)) return;
+
+        QueuePersistence.Data data = QueuePersistence.load(currentTenant);
+
+        // 只关注当前租户的未完成条目
+        List<QueueEntry> tenantUnfinished = new ArrayList<>();
         for (QueueEntry e : data.entries) {
             QueueEntry.QueueStatus s = e.getStatus();
-            if (s == QueueEntry.QueueStatus.PENDING || s == QueueEntry.QueueStatus.BUILDING) {
-                unfinished.add(e);
+            boolean sameTenant = currentTenant.equals(e.getTenant());
+            if (sameTenant && (s == QueueEntry.QueueStatus.PENDING || s == QueueEntry.QueueStatus.BUILDING)) {
+                tenantUnfinished.add(e);
             }
         }
-        if (unfinished.isEmpty()) return;
+        if (tenantUnfinished.isEmpty()) return;
 
         int choice = JOptionPane.showConfirmDialog(this,
-                "Found " + unfinished.size() + " unfinished build queue entries from a previous session.\n" +
-                "Resume monitoring? (No new builds will be triggered, only polling resumes.)",
+                "Found " + tenantUnfinished.size() + " unfinished build entries for tenant '" + currentTenant + "'.\n" +
+                "Resume monitoring? (Only polling, no new builds will be triggered.)",
                 "Resume Build Queue",
                 JOptionPane.YES_NO_OPTION,
                 JOptionPane.QUESTION_MESSAGE);
 
         if (choice == JOptionPane.YES_OPTION) {
-            BuildQueue.BuildQueueListener queueListener = new BuildQueue.BuildQueueListener() {
-                @Override
-                public void onEntryStatusChanged(QueueEntry entry) {
-                    pendingDeployPanel.refreshEntry(entry);
-                }
-                @Override
-                public void onQueueCompleted(boolean allSuccess) {
-                    buildPackageButton.setEnabled(true);
-                    buildPackageButton.setText("Build Package");
-                    resetPauseResumeButton();
-                    if (allSuccess) {
-                        JOptionPane.showMessageDialog(BuildPackageDialog.this,
-                                "All groups built successfully!", "Queue Completed", JOptionPane.INFORMATION_MESSAGE);
-                    }
-                }
-                @Override
-                public void onQueueFailed(QueueEntry failedEntry, String failedApp) {
-                    buildPackageButton.setEnabled(true);
-                    buildPackageButton.setText("Build Package");
-                    resetPauseResumeButton();
-                    pendingDeployPanel.showError("Group '" + failedEntry.getGroupName() + "' failed on app: " + failedApp);
-                    JOptionPane.showMessageDialog(BuildPackageDialog.this,
-                            "Build failed!\nGroup: " + failedEntry.getGroupName() + "\nApp: " + failedApp,
-                            "Build Failed", JOptionPane.ERROR_MESSAGE);
-                }
-                @Override
-                public void onPollingError(String errorMessage) {
-                    pendingDeployPanel.showError(errorMessage);
-                }
-            };
-
             buildQueue = new BuildQueue(data.entries, apiClient, currentToken, currentTenant,
-                    queueListener, data.pollingIntervalSeconds);
+                    createQueueListener(), data.pollingIntervalSeconds);
             pendingDeployPanel.setQueue(buildQueue);
             pendingDeployPanel.setPollingIntervalSeconds(data.pollingIntervalSeconds);
             pendingDeployPanel.loadEntries(data.entries);
@@ -2100,8 +2202,45 @@ public class BuildPackageDialog extends JDialog {
             cancelQueueButton.setVisible(true);
 
             buildQueue.resumePolling();
-            logger.info("Build queue restored with {} entries", data.entries.size());
+            logger.info("Build queue restored from persistence with {} entries for tenant '{}'",
+                    data.entries.size(), currentTenant);
         }
+    }
+
+    /**
+     * 创建标准的 BuildQueueListener（避免重复代码）
+     */
+    private BuildQueue.BuildQueueListener createQueueListener() {
+        return new BuildQueue.BuildQueueListener() {
+            @Override
+            public void onEntryStatusChanged(QueueEntry entry) {
+                pendingDeployPanel.refreshEntry(entry);
+            }
+            @Override
+            public void onQueueCompleted(boolean allSuccess) {
+                buildPackageButton.setEnabled(true);
+                buildPackageButton.setText("Build Package");
+                resetPauseResumeButton();
+                if (allSuccess) {
+                    JOptionPane.showMessageDialog(BuildPackageDialog.this,
+                            "All groups built successfully!", "Queue Completed", JOptionPane.INFORMATION_MESSAGE);
+                }
+            }
+            @Override
+            public void onQueueFailed(QueueEntry failedEntry, String failedApp) {
+                buildPackageButton.setEnabled(true);
+                buildPackageButton.setText("Build Package");
+                resetPauseResumeButton();
+                pendingDeployPanel.showError("Group '" + failedEntry.getGroupName() + "' failed on app: " + failedApp);
+                JOptionPane.showMessageDialog(BuildPackageDialog.this,
+                        "Build failed!\nGroup: " + failedEntry.getGroupName() + "\nApp: " + failedApp,
+                        "Build Failed", JOptionPane.ERROR_MESSAGE);
+            }
+            @Override
+            public void onPollingError(String errorMessage) {
+                pendingDeployPanel.showError(errorMessage);
+            }
+        };
     }
 
     /**
@@ -2109,29 +2248,46 @@ public class BuildPackageDialog extends JDialog {
      */
     private java.util.Map<String, List<String>> getSelectedGroupedApps() {
         java.util.Map<String, List<String>> result = new java.util.LinkedHashMap<>();
+        // 跨 group 去重：同一个 app 只会出现在第一个包含它的 group 中
+        java.util.Set<String> seen = new java.util.HashSet<>();
 
-        // 遍历每个 FavoriteGroup，收集被选中的应用
         for (FavoriteGroup group : favoriteGroups) {
             List<String> selected = new ArrayList<>();
-            for (String appName : group.getAppNames()) {
-                for (JCheckBox cb : favoritedAppCheckboxes) {
-                    if (cb.getText().equals(appName) && cb.isSelected()) {
+
+            if (!group.isExpanded() && group.isSelected()) {
+                // 折叠且 group 级别已选中 → 直接取所有 app
+                for (String appName : group.getAppNames()) {
+                    if (seen.add(appName)) {
                         selected.add(appName);
-                        break;
+                    }
+                }
+            } else {
+                // 展开状态 → 以 UI checkbox 为准
+                for (String appName : group.getAppNames()) {
+                    for (JCheckBox cb : favoritedAppCheckboxes) {
+                        if (cb.getText().equals(appName) && cb.isSelected()) {
+                            if (seen.add(appName)) {
+                                selected.add(appName);
+                            }
+                            break;
+                        }
                     }
                 }
             }
+
             if (!selected.isEmpty()) {
                 result.put(group.getName(), selected);
             }
         }
 
-        // 收集 ungrouped 中被选中的应用
+        // ungrouped 始终以 UI checkbox 为准
         List<String> ungroupedSelected = new ArrayList<>();
         for (String appName : ungroupedFavorites) {
             for (JCheckBox cb : favoritedAppCheckboxes) {
                 if (cb.getText().equals(appName) && cb.isSelected()) {
-                    ungroupedSelected.add(appName);
+                    if (seen.add(appName)) {
+                        ungroupedSelected.add(appName);
+                    }
                     break;
                 }
             }
@@ -2143,11 +2299,21 @@ public class BuildPackageDialog extends JDialog {
         return result;
     }
 
+
     /**
      * 判断是否需要进入队列模式：涉及的 FavoriteGroup 数量 >= 2
      */
     private boolean isQueueMode() {
         java.util.Set<String> involvedGroups = new java.util.HashSet<>();
+
+        // 折叠且 group 级别已选中的，直接计入
+        for (FavoriteGroup g : favoriteGroups) {
+            if (!g.isExpanded() && g.isSelected()) {
+                involvedGroups.add(g.getName());
+            }
+        }
+
+        // 展开状态的，以 UI checkbox 为准
         for (JCheckBox cb : favoritedAppCheckboxes) {
             if (!cb.isSelected()) continue;
             String appName = cb.getText();
@@ -2192,6 +2358,8 @@ public class BuildPackageDialog extends JDialog {
     private void startBuildQueue(java.util.Map<String, List<String>> groupedApps) {
         String branch = ((String) branchComboBox.getSelectedItem()).trim();
         String version = versionCodeField.getText().trim();
+
+        AppSettings.getInstance().addVersionCodeHistory(currentTenant, version);
 
         // 按 group name 字母升序排列，Ungrouped 追加末尾
         List<QueueEntry> queueEntries = new ArrayList<>();
@@ -2378,10 +2546,22 @@ public class BuildPackageDialog extends JDialog {
      */
     private List<String> getSelectedApplications() {
         List<String> selectedApps = new ArrayList<>();
-        
-        // 1. 先按照favoriteAppNames的顺序添加选中的收藏应用
+
+        // 收藏应用：折叠且 selected 的 group 直接取全部 app；展开的以 UI checkbox 为准
         for (String favAppName : favoriteAppNames) {
-            // 检查这个收藏应用是否被选中
+            // 先检查是否属于某个折叠且 selected 的 group
+            boolean inCollapsedSelectedGroup = false;
+            for (FavoriteGroup g : favoriteGroups) {
+                if (!g.isExpanded() && g.isSelected() && g.containsApp(favAppName)) {
+                    inCollapsedSelectedGroup = true;
+                    break;
+                }
+            }
+            if (inCollapsedSelectedGroup) {
+                selectedApps.add(favAppName);
+                continue;
+            }
+            // 否则以 UI checkbox 为准
             for (JCheckBox checkbox : favoritedAppCheckboxes) {
                 if (checkbox.getText().equals(favAppName) && checkbox.isSelected()) {
                     selectedApps.add(favAppName);
@@ -2389,7 +2569,7 @@ public class BuildPackageDialog extends JDialog {
                 }
             }
         }
-        
+
         // 2. 添加选中的非收藏应用（排在最后）
         selectedApps.addAll(unfavoritedAppCheckboxes.stream()
             .filter(JCheckBox::isSelected)
@@ -2446,7 +2626,9 @@ public class BuildPackageDialog extends JDialog {
         String branch = (String) branchComboBox.getSelectedItem();
         String versionCode = versionCodeField.getText().trim();
         List<String> selectedApps = getSelectedApplications();
-        
+
+        AppSettings.getInstance().addVersionCodeHistory(currentTenant, versionCode);
+
         logger.info("=== Submitting Build Request ===");
         logger.info("Branch: {}, Version: {}, Apps: {}", branch, versionCode, selectedApps);
         
@@ -2576,17 +2758,11 @@ public class BuildPackageDialog extends JDialog {
     public void dispose() {
         logger.info("=== Disposing Build Package Dialog ===");
 
-        // 队列运行中的关闭确认
+        // 队列运行中 → 断开 UI 绑定，让 queue 继续在后台跑
         if (buildQueue != null && buildQueue.isRunning()) {
-            int choice = JOptionPane.showConfirmDialog(this,
-                    "A build queue is still running.\nThe queue will stop but its state has been saved.\nClose anyway?",
-                    "Queue Running",
-                    JOptionPane.YES_NO_OPTION,
-                    JOptionPane.WARNING_MESSAGE);
-            if (choice != JOptionPane.YES_OPTION) {
-                return;
-            }
-            buildQueue.cancel();
+            logger.info("BuildQueue still running for tenant '{}', detaching UI listener (queue continues in background)", currentTenant);
+            buildQueue.setListener(null);  // 断开 UI 回调，避免更新已销毁的组件
+            buildQueue = null;  // 本地引用置空，不 cancel
         }
 
         // 取消正在进行的异步操作

@@ -66,6 +66,7 @@ public class GroupHeaderPanel extends JPanel {
         
         // 分组复选框
         groupCheckbox = new JCheckBox();
+        groupCheckbox.setSelected(group.isSelected());  // 从数据层恢复选中状态
         groupCheckbox.setBackground(HEADER_BG_COLOR);
         groupCheckbox.setFocusPainted(false);
         add(groupCheckbox);
@@ -102,6 +103,11 @@ public class GroupHeaderPanel extends JPanel {
             
             @Override
             public void mouseClicked(MouseEvent e) {
+                // 如果点击在 checkbox 上，不触发 expand toggle
+                if (SwingUtilities.isDescendingFrom(e.getComponent(), groupCheckbox) ||
+                        groupCheckbox.getBounds().contains(e.getPoint())) {
+                    return;
+                }
                 // 左键点击：切换展开/折叠
                 if (e.getButton() == MouseEvent.BUTTON1) {
                     toggleExpanded();
